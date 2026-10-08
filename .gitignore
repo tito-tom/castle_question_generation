@@ -19,8 +19,7 @@ venv/
 
 # Model/cache files
 .cache/
-huggingface/
-models/
+huggingface/*
 
 # Generated data
 data/videos/*
