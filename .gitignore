@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+
+# Environment files
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# Pytest
+.pytest_cache/
+.coverage
+
+# Model/cache files
+.cache/
+huggingface/
+models/
+
+# Generated data
+data/videos/*
+data/clips/*
+data/metadata/*
+data/analysis/*
+
+# Keep folders in git
+!data/videos/.gitkeep
+!data/clips/.gitkeep
+!data/metadata/.gitkeep
+!data/analysis/.gitkeep

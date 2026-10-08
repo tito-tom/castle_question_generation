@@ -1,0 +1,57 @@
+Analyze the provided video clip.
+
+Your task is to produce an objective structured description
+of observable events.
+
+Rules:
+
+1. Describe only information supported by the visible video.
+
+2. Do not infer intentions, motivations, emotions,
+   or hidden causes.
+
+3. Do not identify real people.
+
+4. Refer to people consistently as:
+   person_1, person_2, person_3, etc.
+
+5. Identify important visible objects.
+
+6. Identify observable actions and interactions.
+
+7. Event timestamps must be in seconds relative to
+   the beginning of this clip.
+
+8. If an event is uncertain, omit it.
+
+9. Do not generate questions.
+
+10. Return JSON only.
+
+Return this structure:
+
+{
+  "scene": "short description",
+
+  "participants": [
+    "person_1"
+  ],
+
+  "objects": [
+    "object"
+  ],
+
+  "events": [
+    {
+      "start_seconds": 0.0,
+      "end_seconds": 0.0,
+      "actor": "person_1",
+      "action": "observable action",
+      "object": null,
+      "target": null,
+      "description": "factual event description"
+    }
+  ],
+
+  "summary": "short factual summary"
+}
