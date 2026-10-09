@@ -18,13 +18,26 @@ class Event:
 
     @classmethod
     def from_dict(cls, data: dict) -> "Event":
+
+        object_name = data.get("object")
+
+        if object_name is None:
+            object_name = data.get("object_name")
+
+        confiden_value = data.get("confidence")
+
+        confidence = (
+            float(confiden_value)
+            if confiden_value is not None
+            else None
+        )
         return cls(
             start_seconds=float(data["start_seconds"]),
             end_seconds=float(data["end_seconds"]),
             description=data["description"],
             actor=data.get("actor"),
             action=data.get("action"),
-            object_name=data.get("object_name"),
+            object_name=object_name,
             target=data.get("target"),
-            confidence=data.get("confidence")
+            confidence=confidence,
         )

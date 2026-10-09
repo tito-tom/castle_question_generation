@@ -55,3 +55,100 @@ The example values illustrate JSON formatting only.
 Replace them with actual observations from the video.
 Ensure the entire output is valid and complete JSON.
 
+
+EVENT EXTRACTION RULES:
+
+For every event, identify these components:
+
+1. actor:
+   The person performing the action.
+   Example: "person_1"
+
+2. action:
+   A short, normalized action verb or verb phrase.
+   Do not include the object or location in this field.
+   Examples:
+   - "retrieves"
+   - "picks up"
+   - "places"
+   - "opens"
+   - "cuts"
+   - "pours"
+   - "hands over"
+
+3. object:
+   The object being manipulated or affected by the action.
+   Examples:
+   - "drink"
+   - "knife"
+   - "cup"
+   - "plate"
+   - "bottle"
+
+4. target:
+   The secondary person, object, or location involved
+   in the action, including a source or destination.
+
+   Examples:
+   - "fridge"
+   - "table"
+   - "person_2"
+   - "sink"
+
+5. description:
+   A complete, factual sentence describing the event.
+
+IMPORTANT:
+- Extract structured fields from observable actions.
+- Do not put the whole action description in the action field.
+- If an object is clearly involved, put it in the object field.
+- If a secondary location or participant is clearly involved,
+  put it in the target field.
+- Use null only when information cannot be reliably determined.
+- Never invent objects, actions, or relationships.
+- Return valid JSON only.
+
+EXAMPLE 1:
+
+Observed event:
+"Person 5 retrieves a drink from the fridge."
+
+Structured output:
+{
+  "actor": "person_5",
+  "action": "retrieves",
+  "object": "drink",
+  "target": "fridge",
+  "description": "Person 5 retrieves a drink from the fridge."
+}
+
+EXAMPLE 2:
+
+Observed event:
+"Person 2 places a plate on the table."
+
+Structured output:
+{
+  "actor": "person_2",
+  "action": "places",
+  "object": "plate",
+  "target": "table",
+  "description": "Person 2 places a plate on the table."
+}
+
+EXAMPLE 3:
+
+Observed event:
+"Person 3 walks into the kitchen."
+
+Structured output:
+{
+  "actor": "person_3",
+  "action": "enters",
+  "object": null,
+  "target": "kitchen",
+  "description": "Person 3 enters the kitchen."
+}
+
+Use these examples only to understand the output structure.
+Do not copy example events into the actual analysis.
