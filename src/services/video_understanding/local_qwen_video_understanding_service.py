@@ -21,6 +21,11 @@ class LocalQwenVideoUnderstandingService(
         # Lazy import allow to run without GPU dependencies.
         import torch
 
+        torch.backends.cudnn.enabled = False
+        torch.backends.cuda.enable_cudnn_sdp(False)
+
+        print("cuDNN enabled:", torch.backends.cudnn.enabled)
+
         from transformers import (
             AutoProcessor,
             Qwen2_5_VLForConditionalGeneration
@@ -55,7 +60,7 @@ class LocalQwenVideoUnderstandingService(
             AutoProcessor.from_pretrained(
                 self._model_name,
                 min_pixels=min_pixels,
-                min_pixels=max_pixels,
+                max_pixels=max_pixels,
             )
         )
 
@@ -98,7 +103,7 @@ class LocalQwenVideoUnderstandingService(
             self._processor.apply_chat_template(
                 messages, 
                 fps = self._fps,
-                add_genertation_prompt = True,
+                add_generation_prompt = True,
                 tokenize = True,
                 return_dict = True,
                 return_tensors = "pt",
@@ -121,7 +126,7 @@ class LocalQwenVideoUnderstandingService(
 
         generated_ids = [
             output[
-                len(input_ids)
+                len(input_ids):
             ] 
             for input_ids, output 
             in zip(
@@ -191,7 +196,7 @@ class LocalQwenVideoUnderstandingService(
             candidate = text[start:end+1]
 
             try:
-                return json.load(candidate)
+                return json.loads(candidate)
             except json.JSONDecodeError as error:
                 raise ValueError(
                     "Unable to parse model "

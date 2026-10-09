@@ -30,7 +30,7 @@ class Settings:
 
         return cls(
             video_understanding_mode =os.getenv(
-                "VIDEO_UNDERSTANDIND_MODE",
+                "VIDEO_UNDERSTANDING_MODE",
                 "mock"
             ),
             model_name = os.getenv(

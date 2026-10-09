@@ -26,5 +26,5 @@ class Event:
             action=data.get("action"),
             object_name=data.get("object_name"),
             target=data.get("target"),
-            confidence=float(data["confidence"]),
+            confidence=data.get("confidence")
         )

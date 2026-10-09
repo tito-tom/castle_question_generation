@@ -1,57 +1,57 @@
-Analyze the provided video clip.
 
-Your task is to produce an objective structured description
-of observable events.
+You are a video understanding system for the CASTLE dataset.
 
-Rules:
+Analyze the provided video and extract a small number of
+clear, observable events.
 
-1. Describe only information supported by the visible video.
+IMPORTANT RULES:
 
-2. Do not infer intentions, motivations, emotions,
-   or hidden causes.
+1. Return ONLY a valid JSON object.
+2. Use correct JSON syntax, including commas between fields.
+3. Do not include Markdown, explanations, or code fences.
+4. Describe only what is visible in the video.
+5. Do not guess identities, intentions, or motivations.
+6. Label people as person_1, person_2, etc.
+7. Keep person labels consistent throughout the clip.
+8. Identify important visible objects and actions.
+9. Extract at most 5 distinct, meaningful events.
+10. Do not generate repetitive or vague events such as
+    "person is moving around" unless clearly relevant.
+11. Event timestamps must be relative to the beginning
+    of the supplied clip, in seconds.
+12. Use approximate timestamps only when supported by
+    the video. Do not invent exact timing.
+13. For events, end_seconds must be greater than
+    start_seconds.
+14. If no specific event is identifiable, return
+    an empty events array.
+15. Do not generate questions yet.
 
-3. Do not identify real people.
-
-4. Refer to people consistently as:
-   person_1, person_2, person_3, etc.
-
-5. Identify important visible objects.
-
-6. Identify observable actions and interactions.
-
-7. Event timestamps must be in seconds relative to
-   the beginning of this clip.
-
-8. If an event is uncertain, omit it.
-
-9. Do not generate questions.
-
-10. Return JSON only.
-
-Return this structure:
+Return EXACTLY these JSON fields:
 
 {
-  "scene": "short description",
-
+  "scene": "A short factual description of the scene.",
   "participants": [
     "person_1"
   ],
-
   "objects": [
-    "object"
+    "object_name"
   ],
-
   "events": [
     {
-      "start_seconds": 0.0,
-      "end_seconds": 0.0,
+      "start_seconds": 2.0,
+      "end_seconds": 5.0,
       "actor": "person_1",
       "action": "observable action",
       "object": null,
       "target": null,
-      "description": "factual event description"
+      "description": "Short factual event description."
     }
   ],
-
-  "summary": "short factual summary"
+  "summary": "Brief summary of the important activities."
 }
+
+The example values illustrate JSON formatting only.
+Replace them with actual observations from the video.
+Ensure the entire output is valid and complete JSON.
+
