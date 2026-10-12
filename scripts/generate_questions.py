@@ -18,7 +18,7 @@ from src.services.question_generation.template_question_generator import (
     TemplateQuestionGenerator
 )
 
-from services.question_generation.qwen_local_question_generator import (
+from src.services.question_generation.qwen_local_question_generator import (
     QwenLocalQuestionGenerator
 )
 
