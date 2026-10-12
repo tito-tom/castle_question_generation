@@ -1,4 +1,3 @@
-
 import argparse
 import json
 
@@ -8,28 +7,39 @@ from src.models.qa_criteria import QACriteria
 from src.models.video_analysis import VideoAnalysis
 
 from src.repositories.question_repository import (
-    QuestionRepository,
+    QuestionRepository
 )
 
 from src.services.question_generation.question_validator import (
-    QuestionValidator,
+    QuestionValidator
 )
 
 from src.services.question_generation.template_question_generator import (
-    TemplateQuestionGenerator,
+    TemplateQuestionGenerator
 )
 
+from services.question_generation.qwen_local_question_generator import (
+    QwenLocalQuestionGenerator
+)
 
 def main() -> None:
-
     parser = argparse.ArgumentParser(
-        description="Generate draft Who questions from VideoAnalysis JSON"
+        description=(
+            "Generate draft questions "
+            "from an existing VideoAnalysis JSON"
+        )
     )
 
     parser.add_argument(
         "--analysis",
         type=Path,
         required=True,
+    )
+
+    parser.add_argument(
+        "--generator",
+        choices=["template", "qwen_local"],
+        default="template",
     )
 
     parser.add_argument(
@@ -50,9 +60,19 @@ def main() -> None:
         default=None,
     )
 
+    parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=768,
+    )
+
     args = parser.parse_args()
 
-    # Load the previously generated VLM analysis.
+    if not args.analysis.is_file():
+        parser.error(
+            f"Analysis file not found: {args.analysis}"
+        )
+
     data = json.loads(
         args.analysis.read_text(encoding="utf-8")
     )
@@ -64,29 +84,37 @@ def main() -> None:
     )
 
     criteria = QACriteria(
-        max_questions=args.max_questions
+        max_questions=args.max_questions,
     )
 
-    # Generate candidate questions.
-    generator = TemplateQuestionGenerator()
+    if args.generator == "qwen_local":
+
+        generator = QwenLocalQuestionGenerator(
+            model_name=analysis.model_name,
+            raw_output_dir=args.output_dir / "raw",
+            max_new_tokens=args.max_new_tokens,
+        )
+
+    else:
+        generator = TemplateQuestionGenerator()
 
     candidates = generator.generate(
         analysis=analysis,
         criteria=criteria,
     )
 
-    # Apply basic validation.
-    validator = QuestionValidator()
-
-    valid_questions = validator.validate(
+    valid_questions = QuestionValidator().validate(
         candidates=candidates,
         criteria=criteria,
         clip_duration_seconds=args.clip_duration,
     )
 
-    # Save results.
+    output_directory = (
+        args.output_dir / args.generator
+    )
+
     repository = QuestionRepository(
-        output_directory=args.output_dir
+        output_directory=output_directory
     )
 
     output_path = repository.save(
@@ -94,6 +122,8 @@ def main() -> None:
         criteria=criteria,
         questions=valid_questions,
     )
+
+    print(f"Method: {args.generator}")
 
     print(
         f"Generated {len(valid_questions)} draft questions"
@@ -111,3 +141,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
