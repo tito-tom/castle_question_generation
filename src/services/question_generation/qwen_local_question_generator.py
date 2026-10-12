@@ -265,7 +265,7 @@ class QwenLocalQuestionGenerator(QuestionGenerationService):
 
         from transformers import (
             AutoProcessor,
-            Qwen2_5_VLFORConditionalGeneration,
+            Qwen2_5_VLForConditionalGeneration,
         )
 
         if not torch.cuda.is_available():
@@ -278,7 +278,7 @@ class QwenLocalQuestionGenerator(QuestionGenerationService):
         )
 
         model = (
-            Qwen2_5_VLFORConditionalGeneration.from_pretrained(
+            Qwen2_5_VLForConditionalGeneration.from_pretrained(
                 self._model_name,
                 dtype="auto",
                 device_map="auto",
