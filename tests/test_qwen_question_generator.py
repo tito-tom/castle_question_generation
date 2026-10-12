@@ -28,7 +28,8 @@ def sample_analysis():
                 "object": "drink",
                 "target": "fridge",
                 "description": (
-                    "Person 5 retrieves a drink from the fridge."
+                    "A drink is retrieved from the fridge "
+                    "by Person 5."
                 ),
             }
         ],
@@ -44,24 +45,35 @@ def sample_analysis():
     )
 
 
-def test_qwen_rewrites_question(tmp_path):
+def make_generator(tmp_path, response):
+
+    prompt_path = tmp_path / "prompt.txt"
+    prompt_path.write_text(
+        "Generate questions directly from events.",
+        encoding="utf-8",
+    )
+
+    return QwenLocalQuestionGenerator(
+        prompt_path=prompt_path,
+        raw_output_dir=tmp_path,
+        text_generator=lambda prompt: response,
+    )
+
+
+def test_qwen_generates_directly_from_events(tmp_path):
 
     response = json.dumps({
         "questions": [
             {
                 "source_event_index": 0,
                 "question": (
-                    "Who retrieves a drink "
-                    "from the refrigerator?"
+                    "Who retrieves a drink from the fridge?"
                 ),
             }
         ]
     })
 
-    generator = QwenLocalQuestionGenerator(
-        raw_output_dir=tmp_path,
-        text_generator=lambda prompt: response,
-    )
+    generator = make_generator(tmp_path, response)
 
     questions = generator.generate(
         analysis=sample_analysis(),
@@ -69,19 +81,63 @@ def test_qwen_rewrites_question(tmp_path):
     )
 
     assert len(questions) == 1
-
     assert questions[0].question == (
-        "Who retrieves a drink from the refrigerator?"
+        "Who retrieves a drink from the fridge?"
     )
 
     assert questions[0].actor_reference == "person_5"
     assert questions[0].answer is None
 
-    assert questions[0].source_event_index == 0
     assert questions[0].evidence.start_seconds == 40.0
     assert questions[0].evidence.end_seconds == 45.0
 
     assert questions[0].generation_method == "qwen_local"
+
+
+def test_generator_receives_events_without_templates(
+    tmp_path,
+):
+
+    captured = {}
+
+    def fake_model(prompt):
+        captured["prompt"] = prompt
+
+        return json.dumps({
+            "questions": [
+                {
+                    "source_event_index": 0,
+                    "question": (
+                        "Who retrieves a drink from the fridge?"
+                    ),
+                }
+            ]
+        })
+
+    prompt_path = tmp_path / "prompt.txt"
+    prompt_path.write_text(
+        "Generate direct questions.",
+        encoding="utf-8",
+    )
+
+    generator = QwenLocalQuestionGenerator(
+        prompt_path=prompt_path,
+        raw_output_dir=tmp_path,
+        text_generator=fake_model,
+    )
+
+    questions = generator.generate(
+        sample_analysis(),
+        QACriteria(),
+    )
+
+    assert len(questions) == 1
+
+    payload = captured["prompt"]
+
+    assert "A drink is retrieved from the fridge" in payload
+    assert '"source_event_index": 0' in payload
+    assert "baseline_question" not in payload
 
 
 def test_invalid_event_index_is_ignored(tmp_path):
@@ -95,10 +151,30 @@ def test_invalid_event_index_is_ignored(tmp_path):
         ]
     })
 
-    generator = QwenLocalQuestionGenerator(
-        raw_output_dir=tmp_path,
-        text_generator=lambda prompt: response,
+    generator = make_generator(tmp_path, response)
+
+    questions = generator.generate(
+        sample_analysis(),
+        QACriteria(),
     )
+
+    assert questions == []
+
+
+def test_question_with_person_label_is_rejected(tmp_path):
+
+    response = json.dumps({
+        "questions": [
+            {
+                "source_event_index": 0,
+                "question": (
+                    "Who gives a drink to Person 3?"
+                ),
+            }
+        ]
+    })
+
+    generator = make_generator(tmp_path, response)
 
     questions = generator.generate(
         sample_analysis(),
@@ -110,9 +186,9 @@ def test_invalid_event_index_is_ignored(tmp_path):
 
 def test_invalid_json_is_saved(tmp_path):
 
-    generator = QwenLocalQuestionGenerator(
-        raw_output_dir=tmp_path,
-        text_generator=lambda prompt: "not valid JSON",
+    generator = make_generator(
+        tmp_path,
+        "not valid JSON",
     )
 
     with pytest.raises(ValueError, match="invalid JSON"):

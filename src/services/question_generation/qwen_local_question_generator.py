@@ -1,22 +1,36 @@
-from dataclasses import replace
 import json
+import re
+
 from pathlib import Path
 from typing import Callable
 
-from src.services.question_generation.template_question_generator import TemplateQuestionGenerator
-from src.models.video_analysis import VideoAnalysis
 from src.models.qa_criteria import QACriteria
-from src.models.question_candidate import QuestionCandidate
-from src.services.question_generation.question_generation_service import QuestionGenerationService
+from src.models.question_candidate import (
+    EvidenceInterval,
+    QuestionCandidate,
+)
+
+from src.models.video_analysis import VideoAnalysis
+
+from src.services.question_generation.question_generation_service import (
+    QuestionGenerationService
+)
 
 class QwenLocalQuestionGenerator(QuestionGenerationService):
-    """Rewrite baseline questions using text-only Qwen inference."""
+    """
+    Generate question suggestions directly from structured
+    events using Qwen2.5VL text-only inference.
+    """
 
     def __init__(
         self,
         model_name: str = "Qwen/Qwen2.5-VL-7B-Instruct",
-        prompt_path: Path = Path("prompts/question_generation.txt"),
-        raw_output_dir: Path = Path("data/questions/raw"),
+        prompt_path: Path = Path(
+            "prompts/question_generation.txt"
+        ),
+        raw_output_dir: Path = Path(
+            "data/questions/raw"
+        ),
         max_new_tokens: int = 768,
         text_generator: Callable[[str], str] | None = None,
     ) -> None:
@@ -25,8 +39,15 @@ class QwenLocalQuestionGenerator(QuestionGenerationService):
         self._instructions = Path(prompt_path).read_text(
             encoding="utf-8"
         )
+
         self._raw_output_dir = Path(raw_output_dir)
         self._max_new_tokens = max_new_tokens
+
+        if max_new_tokens <= 0:
+            raise ValueError(
+                "max_new_tokens must be positive."
+            )
+
         self._text_generator = text_generator
 
     def generate(
@@ -35,28 +56,45 @@ class QwenLocalQuestionGenerator(QuestionGenerationService):
         criteria: QACriteria,
     ) -> list[QuestionCandidate]:
 
-        baseline = TemplateQuestionGenerator().generate(
-            analysis,
-            criteria
-        )
+        eligible_events = {}
 
-        if not baseline:
+        for index, event in enumerate(analysis.events):
+            duration = (
+                event.end_seconds - event.start_seconds
+            )
+
+            if not event.action:
+                continue
+
+            if not event.description:
+                continue
+
+            if event.start_seconds < 0:
+                continue
+
+            if event.end_seconds <= event.start_seconds:
+                continue 
+
+            if duration < criteria.min_event_seconds:
+                continue
+
+            eligible_events[index] = event
+
+        if not eligible_events:
             return []
 
         events = []
 
-        for candidate in baseline:
-            index = candidate.source_event_index
-            event = analysis.events[index]
-
+        for index, event in eligible_events.items():
             events.append({
                 "source_event_index": index,
-                "baseline_question": candidate.question,
                 "description": event.description,
                 "actor": event.actor,
                 "action": event.action,
                 "object": event.object_name,
                 "target": event.target,
+                "start_seconds": event.start_seconds,
+                "end_seconds": event.end_seconds,
             })
 
         payload = {
@@ -64,13 +102,13 @@ class QwenLocalQuestionGenerator(QuestionGenerationService):
                 "require_who": criteria.require_who,
                 "max_questions": criteria.max_questions,
             },
-            "scene_context": analysis.scene,
+            "scene": analysis.scene,
             "events": events,
         }
 
         prompt = (
             self._instructions
-            + "\n\nInput events (JSON):\n"
+            + "\n\nINPUT DATA:\n"
             + json.dumps(
                 payload,
                 indent=2,
@@ -82,66 +120,93 @@ class QwenLocalQuestionGenerator(QuestionGenerationService):
 
         self._raw_output_dir.mkdir(
             parents=True,
-            exist_ok=True,
+            exist_ok=True
         )
 
         raw_path = (
             self._raw_output_dir
-            / f"{Path(analysis.clip_path).stem}_qwen_questions_raw.txt"
+            / (
+                f"{Path(analysis.clip_path).stem}"
+                "_qwen_questions_raw.txt"
+            )
         )
 
         raw_path.write_text(
             raw_response,
-            encoding="utf-8"
+            encoding="utf-8",
         )
 
-        rewrites = self.parse_response(raw_response)
-
-        allowed_indices = {
-            candidate.source_event_index
-            for candidate in baseline
-        }
-
-        rewritten_by_index = {}
-
-        for item in rewrites:
-            index = item["source_event_index"]
-            question = item["question"].strip()
-
-            if (
-                index in allowed_indices
-                and index not in rewritten_by_index
-                and question
-            ):
-                rewritten_by_index[index] = question
+        generated_questions = self.parse_response(
+            raw_response
+        )
 
         results = []
+        used_indices = set()
 
-        for candidate in baseline:
-            question = rewritten_by_index.get(
-                candidate.source_event_index
+        for item in generated_questions:
+
+            index = item.get("source_event_index")
+            question = item.get("question").strip()
+
+            if index not in eligible_events:
+                continue
+
+            if index in used_indices:
+                continue
+
+            if not question.endswith("?"):
+                continue
+
+            if criteria.require_who:
+                if not re.match(
+                    r"^Who\b",
+                    question,
+                    flags=re.IGNORECASE,
+                ): 
+                    continue
+
+            if re.search(
+                r"\bperson(?:_|\s|-)?\d+\b",
+                question,
+                flags=re.IGNORECASE
+            ):
+                continue
+
+            event = eligible_events[index]
+
+            candidate = QuestionCandidate(
+                question=question,
+                answer=None,
+                actor_reference=event.actor,
+                source_event_index=index,
+                evidence=EvidenceInterval(
+                    clip_path=str(analysis.clip_path),
+                    start_seconds=event.start_seconds,
+                    end_seconds=event.end_seconds,
+                ),
+                generation_method="qwen_local",
+                review_status="pending",
             )
 
-            if question is not None:
-                results.append(
-                    replace(
-                        candidate,
-                        question=question,
-                        generation_method="qwen_local"
-                    )
-                )
+            results.append(candidate)
+            used_indices.add(index)
+
+            if len(results) >= criteria.max_questions:
+                break
 
         return results
 
     @staticmethod
-    def parse_response(raw_response: str) -> list[dict]:
+    def parse_response(
+        raw_response: str,
+    ) -> list[dict]:
 
         text = raw_response.strip()
 
         if text.startswith("```"):
             text = (
                 text.split("\n", 1)[-1]
-                .rstrip("```", 1)[0]
+                .rsplit("```", 1)[0]
                 .strip()
             )
 
@@ -152,10 +217,15 @@ class QwenLocalQuestionGenerator(QuestionGenerationService):
                 f"Qwen returned invalid JSON: {error}"
             ) from error
 
-        if (
-            not isinstance(data, dict)
-            or not isinstance(data.get("questions"), list)
-        ):
+        if not isinstance(data, dict):
+            raise ValueError(
+                "Qwen must return a JSON object "
+                "with a questions list"
+            )
+
+        questions = data.get("questions")
+
+        if not isinstance(questions, list):
             raise ValueError(
                 "Qwen must return a JSON object "
                 "with a questions list"
@@ -163,22 +233,26 @@ class QwenLocalQuestionGenerator(QuestionGenerationService):
 
         valid_items = []
 
-        for item in data["questions"]:
+        for item in questions:
             if not isinstance(item, dict):
                 continue
 
             index = item.get("source_event_index")
             question = item.get("question")
 
-            if (
-                type(index) is int 
-                and index >= 0
-                and isinstance(question, str)
-            ):
-                valid_items.append({
-                    "source_event_index": index,
-                    "question": question,
-                })
+            if type(index) is not int or index < 0:
+                continue
+
+            if not isinstance(question, str):
+                continue
+
+            if not question.strip():
+                continue
+            
+            valid_items.append({
+                "source_event_index": index,
+                "question": question,
+            })
 
         return valid_items
 
@@ -187,17 +261,16 @@ class QwenLocalQuestionGenerator(QuestionGenerationService):
         if self._text_generator is not None:
             return self._text_generator(prompt)
 
-        import torch 
+        import torch
 
         from transformers import (
             AutoProcessor,
-            QwQwen2_5_VLForConditionalGeneration,
+            Qwen2_5_VLFORConditionalGeneration,
         )
 
         if not torch.cuda.is_available():
-            return RuntimeError(
-                "qwen_local requires a CUDA GPU. "
-                "Use template mode on Windows."
+            raise RuntimeError(
+                "qwen_local requires a CUDA GPU."
             )
 
         processor = AutoProcessor.from_pretrained(
@@ -205,7 +278,7 @@ class QwenLocalQuestionGenerator(QuestionGenerationService):
         )
 
         model = (
-            QwQwen2_5_VLForConditionalGeneration.from_pretrained(
+            Qwen2_5_VLFORConditionalGeneration.from_pretrained(
                 self._model_name,
                 dtype="auto",
                 device_map="auto",
