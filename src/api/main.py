@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from src.api.routers import health
+from src.api.routers import health, analyses
 
 def create_app() -> FastAPI:
     """
@@ -18,6 +18,11 @@ def create_app() -> FastAPI:
     # Register API routers.
     app.include_router(
         health.router,
+        prefix="/api/v1"
+    )
+
+    app.include_router(
+        analyses.router,
         prefix="/api/v1"
     )
 
