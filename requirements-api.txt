@@ -1,0 +1,9 @@
+
+# FastAPI backend
+fastapi>=0.115,<1.0
+
+# ASGI server
+uvicorn[standard]>=0.34,<1.0
+
+# API request/response validation
+pydantic>=2.8,<3.0
