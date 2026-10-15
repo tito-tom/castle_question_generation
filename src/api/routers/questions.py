@@ -7,6 +7,7 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Path as PathParameter,
     status,
 )
 
@@ -109,6 +110,7 @@ def generate_question(
         analysis_id=request.analysis_id,
         criteria=criteria,
         clip_duration_seconds=request.clip_duration_seconds,
+        create_generation_record=True,
     )
 
     # Step 3: Handle a missing analysis.
@@ -140,8 +142,90 @@ def generate_question(
 
     # Step 5: Return the completed generation result.
     return QuestionGenerationResponse(
+        generation_id=result.generation_id,
         analysis_id=result.analysis_id,
         generator=request.generator,
         question_count=len(questions),
         questions=questions,
     )
+
+@router.get(
+    "/{generation_id}",
+    response_model=QuestionGenerationResponse,
+    summary="Retrieve a saved question generation",
+)
+def get_saved_generation(
+    generation_id: Annotated[
+        str,
+        PathParameter(
+            pattern=r"^gen_[0-9a-f]{32}$",
+        ),
+    ],
+    workflow: Annotated[
+        QuestionWorkflow,
+        Depends(get_question_workflow),
+    ],
+) -> QuestionGenerationResponse:
+    """
+    Retrieve previously generated questions by ID.
+    """
+
+    # Step 1: Retrieve the saved generation.
+    saved = workflow.get_saved_generation(
+        generation_id
+    )
+
+    # Step 2: Handle missing generation records.
+    if saved is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Generation not found",
+        )
+
+    # Step 3: Verify generator metadata exists.
+    generator_name = saved.get("generator")
+
+    if (
+        not isinstance(generator_name, str)
+        or not generator_name
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Saved generation is missing generator metadata"
+            ),
+        )
+
+    # Step 4: Convet stored questions to API schemas.
+    questions = [
+        QuestionCandidateResponse(
+            question=item["question"],
+            answer=item["answer"],
+            actor_reference=item["actor_reference"],
+            source_event_index=item["source_event_index"],
+            evidence=QuestionEvidenceResponse(
+                clip_name=Path(
+                    item["evidence"]["clip_path"]
+                ).name,
+                start_seconds=(
+                    item["evidence"]["start_seconds"]
+                ),
+                end_seconds=(
+                    item["evidence"]["end_seconds"]
+                ),
+            ),
+            generation_method=item["generation_method"],
+            review_status=item["review_status"],
+        )
+        for item in saved["questions"]
+    ]
+
+    # Step 5: Return the reconstructed API response.
+    return QuestionGenerationResponse(
+        generation_id=generation_id,
+        analysis_id=saved["analysis_id"],
+        generator=generator_name,
+        question_count=len(questions),
+        questions=questions,
+    )
+

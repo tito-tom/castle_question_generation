@@ -42,6 +42,11 @@ class QuestionCandidateResponse(BaseModel):
 
 class QuestionGenerationResponse(BaseModel):
 
+    generation_id: str | None = Field(
+        default=None,
+        pattern=r"^gen_[0-9a-f]{32}$",
+    )
+
     analysis_id: str
     generator: str
 

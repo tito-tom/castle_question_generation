@@ -1,4 +1,4 @@
-
+import re
 import json
 from pathlib import Path
 
@@ -139,10 +139,17 @@ def test_generate_questions_success(api_context):
     assert question["generation_method"] == "template"
     assert question["review_status"] == "pending"
 
+    generation_id = data["generation_id"]
+
+    assert re.fullmatch(
+        r"gen_[0-9a-f]{32}",
+        generation_id,
+    )
+
     # Verify that QuestionRepository saved the result.
     output_path = (
         question_directory
-        / "kitchen_clip_1_questions.json"
+        / f"{generation_id}_questions.json"
     )
 
     assert output_path.is_file()
@@ -151,6 +158,8 @@ def test_generate_questions_success(api_context):
         output_path.read_text(encoding="utf-8")
     )
 
+    assert saved_data["generation_id"] == generation_id
+    assert saved_data["analysis_id"] == "kitchen_clip_1"
     assert len(saved_data["questions"]) == 1
 
 
@@ -259,9 +268,132 @@ def test_evidence_outside_clip_duration(api_context):
     assert data["question_count"] == 0
     assert data["questions"] == []
 
+    generation_id = data["generation_id"]
+
     output_path = (
         question_directory
-        / "kitchen_clip_1_questions.json"
+        / f"{generation_id}_questions.json"
     )
 
     assert output_path.is_file()
+
+
+def test_get_saved_generation_matches_post(
+    api_context,
+    monkeypatch,
+):
+    """
+    Verify that a saved generation can be retrieved
+    without generating questions again.
+    """
+
+    client, question_directory = api_context
+
+    # Step 1: Generate questions through POST.
+    post_response = client.post(
+        "/api/v1/question-generations",
+        json={
+            "analysis_id": "kitchen_clip_1",
+            "generator": "template",
+            "clip_duration_seconds": 60,
+            "max_questions": 5,
+        },
+    )
+
+    assert post_response.status_code == 201
+
+    created = post_response.json()
+
+    generation_id = created["generation_id"]
+
+    assert generation_id is not None
+    assert created["question_count"] == 1
+
+    # Step 2: Confirm that the JSON was saved.
+    output_path = (
+        question_directory
+        / f"{generation_id}_questions.json"
+    )
+
+    assert output_path.is_file()
+
+    saved_data = json.loads(
+        output_path.read_text(encoding="utf-8")
+    )
+
+    assert saved_data["generation_id"] == generation_id
+    assert saved_data["analysis_id"] == "kitchen_clip_1"
+    assert saved_data["generator"] == "template"
+
+    # Step 3: Prevent the generator from running.
+    def forbidden_generate(self, analysis, criteria):
+        raise AssertionError(
+            "GET must not invoke question generation"
+        )
+
+    monkeypatch.setattr(
+        TemplateQuestionGenerator,
+        "generate",
+        forbidden_generate,
+    )
+
+    # Step 4: Retrieve the saved result through GET.
+    get_response = client.get(
+        f"/api/v1/question-generations/{generation_id}"
+    )
+
+    assert get_response.status_code == 200
+
+    retrieved = get_response.json()
+
+    # Step 5: GET must return the same API data.
+    assert retrieved == created
+
+    # Step 6: GET must not create another JSON file.
+    saved_files = list(
+        question_directory.glob("*.json")
+    )
+
+    assert len(saved_files) == 1
+
+
+def test_get_saved_generation_not_found(
+    api_context,
+):
+    """
+    Return HTTP 404 when a generation ID
+    is valid but does not exist.
+    """
+
+    client, _ = api_context
+
+    generation_id = (
+        "gen_00000000000000000000000000000000"
+    )
+
+    response = client.get(
+        f"/api/v1/question-generations/{generation_id}"
+    )
+
+    assert response.status_code == 404
+
+    assert response.json() == {
+        "detail": "Generation not found"
+    }
+
+
+def test_get_saved_generation_invalid_id(
+    api_context,
+):
+    """
+    Return HTTP 422 when the generation ID
+    does not match the required format.
+    """
+
+    client, _ = api_context
+
+    response = client.get(
+        "/api/v1/question-generations/invalid-id"
+    )
+
+    assert response.status_code == 422
