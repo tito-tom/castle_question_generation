@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from src.api.routers import health, analyses
+from src.api.routers import health, analyses, questions
 
 def create_app() -> FastAPI:
     """
@@ -24,6 +24,11 @@ def create_app() -> FastAPI:
     app.include_router(
         analyses.router,
         prefix="/api/v1"
+    )
+
+    app.include_router(
+        questions.router,
+        prefix="/api/v1",
     )
 
     return app
