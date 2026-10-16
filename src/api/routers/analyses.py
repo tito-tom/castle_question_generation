@@ -1,6 +1,5 @@
+from src.config.api_settings import APISettings
 
-import os
-from pathlib import Path
 from typing import Annotated
 
 from fastapi import (
@@ -35,23 +34,15 @@ def get_analysis_workflow() -> AnalysisWorkflow:
     Create the workflow with its repository dependency.
     """
 
-    project_root = Path(__file__).resolve().parents[3]
+    # step 1: Load API configuration.
+    settings = APISettings.from_environment()
 
-    default_directory = (
-        project_root / "data" / "analysis"
-    )
-
-    directory = Path(
-        os.environ.get(
-            "CASTLE_ANALYSIS_DIR",
-            str(default_directory),
-        )
-    )
-
+    # step 2: Create the repository.
     repository = VideoAnalysisRepository(
-        directory=directory
+        directory=settings.analysis_directory,
     )
 
+    # step 3: Inject repository into workflow.
     return AnalysisWorkflow(
         repository=repository
     )

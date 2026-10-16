@@ -1,4 +1,4 @@
-import os
+from src.config.api_settings import APISettings
 
 from pathlib import Path
 from typing import Annotated
@@ -49,39 +49,32 @@ def get_question_workflow() -> QuestionWorkflow:
     and its dependencies.
     """
 
-    project_root = Path(__file__).resolve().parents[3]
+    # step 1: Load configuration.
+    settings = APISettings.from_environment()
 
-    # Saved video analysis files.
-    analysis_directory = Path(
-        os.environ.get(
-            "CASTLE_ANALYSIS_DIR",
-            str(project_root / "data" / "analysis"),
-        )
+    # step 2: Create the repositories.
+    analysis_repository = VideoAnalysisRepository(
+        directory=settings.analysis_directory,
     )
 
-    # Separate API outputs from stage 2 CLI outputs.
-    question_directory = Path(
-        os.environ.get(
-            "CASTLE_QUESTION_DIR",
-            str(
-                project_root
-                / "data"
-                / "questions"
-                / "api_template"
-            ),
-        )
+    question_repository = QuestionRepository(
+        output_directory=settings.question_directory
     )
 
+    # step 3: Create the question-generation services.
+    generator = TemplateQuestionGenerator()
+
+    validator = QuestionValidator()
+
+    # step 4: Inject dependencies into the workflow.
     return QuestionWorkflow(
-        analysis_repository=VideoAnalysisRepository(
-            directory=analysis_directory,
-        ),
-        question_repository=QuestionRepository(
-            output_directory=question_directory,
-        ),
-        generator=TemplateQuestionGenerator(),
-        validator=QuestionValidator(),
+        analysis_repository=analysis_repository,
+        question_repository=question_repository,
+        generator=generator,
+        validator=validator,
+        generator_name="template",
     )
+
 
 @router.post(
     "",
@@ -148,6 +141,7 @@ def generate_question(
         question_count=len(questions),
         questions=questions,
     )
+
 
 @router.get(
     "/{generation_id}",

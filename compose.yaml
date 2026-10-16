@@ -1,0 +1,30 @@
+
+# CASTLE QA Studio - Docker Compose
+# Stage 3A: CPU-only FastAPI Backend
+
+services:
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+
+    image: castle-qa-api:dev
+    container_name: castle-qa-api
+
+    ports:
+      - "127.0.0.1:8000:8000"
+
+    environment:
+      CASTLE_ANALYSIS_DIR: /app/data/analysis
+      CASTLE_QUESTION_DIR: /app/data/questions/api_template
+
+    volumes:
+      # Existing video analyses (read-only).
+      - ./data/analysis:/app/data/analysis:ro
+
+      # Generated question results (read/write).
+      - ./data/questions/api_template:/app/data/questions/api_template
+
+    restart: unless-stopped
+    init: true
