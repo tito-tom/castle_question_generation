@@ -9,20 +9,20 @@ import {
   Plus,
   ArrowRight,
 } from 'lucide-react';
-import { api } from './services/api';
+import { api } from './shared/api/client';
 import {
   AnnotationReviewSession,
   InferenceJob,
   VideoAnalysis,
   VideoItem,
-} from './types';
-import { Header } from './components/Header';
-import { VideoPlayer } from './components/VideoPlayer';
-import { TimelineView } from './components/TimelineView';
-import { GroundedQAPanel } from './components/GroundedQAPanel';
-import { AnnotationReviewWorkspace } from './components/AnnotationReviewWorkspace';
-import { VideoUploadModal } from './components/VideoUploadModal';
-import { WhodunnitExportModal } from './components/WhodunnitExportModal';
+} from './shared/types';
+import { Header } from './shared/components/Header';
+import { VideoPlayer } from './features/videos/VideoPlayer';
+import { TimelineView } from './features/video-understanding/TimelineView';
+import { GroundedQAPanel } from './features/question-answering/GroundedQAPanel';
+import { AnnotationReviewWorkspace } from './features/annotations/AnnotationReviewWorkspace';
+import { VideoUploadModal } from './features/videos/VideoUploadModal';
+import { WhodunnitExportModal } from './features/annotations/WhodunnitExportModal';
 
 export const App: React.FC = () => {
   const [videos, setVideos] = useState<VideoItem[]>([]);

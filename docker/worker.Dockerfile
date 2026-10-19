@@ -39,11 +39,14 @@ RUN mkdir -p /app/data/analysis \
              /app/data/clips \
              /app/data/reviews
 
-# Copy application code, prompts, and database migrations
-COPY src/ ./src/
-COPY prompts/ ./prompts/
-COPY alembic.ini ./alembic.ini
-COPY alembic/ ./alembic/
+# Copy application code, prompts, and database migrations from backend/
+COPY backend/src/ ./src/
+COPY backend/prompts/ ./prompts/
+COPY backend/alembic.ini ./alembic.ini
+COPY backend/alembic/ ./alembic/
+COPY backend/pyproject.toml ./pyproject.toml
 
-CMD ["python", "-m", "src.workers.main", "--poll-interval", "2.0"]
+# Install package in container
+RUN python -m pip install --no-cache-dir -e .
 
+CMD ["python", "-m", "castle_qa.workers.entrypoint", "--poll-interval", "2.0"]

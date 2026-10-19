@@ -42,4 +42,11 @@ data/reviews/*
 # Frontend
 frontend/node_modules/
 frontend/dist/
-frontend/.vite/
+frontend/.vite/
+
+# Video binaries
+*.mp4
+*.avi
+*.mov
+*.mkv
+!data/videos/.gitkeep

@@ -74,22 +74,21 @@ Local CPU testing and development can be performed on Windows without an NVIDIA 
 
 ### 1. Backend Setup
 ```powershell
-# Activate your environment
-conda activate yolo_seg_root
-
-# Install dependencies
-pip install -r requirements-api.txt
+# Navigate to backend and install in editable mode
+cd backend
+pip install -e ".[api,dev]"
 
 # Run database migrations
 alembic upgrade head
 
 # Start FastAPI backend
-uvicorn src.api.main:app --host 127.0.0.1 --port 8000 --reload
+uvicorn castle_qa.api.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 ### 2. Start Worker (Mock Mode for CPU)
 ```powershell
-python -m src.workers.main --poll-interval 2.0 --mock-models
+cd backend
+python -m castle_qa.workers.entrypoint --poll-interval 2.0 --mock-models
 ```
 
 ### 3. Frontend Setup
@@ -103,7 +102,8 @@ npm run dev
 ### 4. Running Tests
 ```powershell
 # Run the complete test suite (106 tests)
-pytest
+cd backend
+pytest -v
 ```
 
 ---

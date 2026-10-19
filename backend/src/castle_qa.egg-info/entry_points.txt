@@ -1,0 +1,3 @@
+[console_scripts]
+castle-api = castle_qa.api.main:run
+castle-worker = castle_qa.workers.entrypoint:main
