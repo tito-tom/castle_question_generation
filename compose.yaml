@@ -1,6 +1,10 @@
-
-# CASTLE QA Studio - Docker Compose
-# Stage 3A: CPU-only FastAPI Backend
+# ============================================================
+# CASTLE QA Studio - Complete Multi-Service Orchestration
+# Services:
+#   1. api: FastAPI Backend (CPU/GPU-agnostic)
+#   2. worker: Qwen2.5-VL Inference Worker (NVIDIA GPU Target)
+#   3. frontend: ReactJS + Vite + Nginx UI
+# ============================================================
 
 services:
 
@@ -8,23 +12,71 @@ services:
     build:
       context: .
       dockerfile: docker/api.Dockerfile
-
-    image: castle-qa-api:dev
+    image: castle-qa-api:latest
     container_name: castle-qa-api
-
     ports:
-      - "127.0.0.1:8000:8000"
-
+      - "8000:8000"
     environment:
       CASTLE_ANALYSIS_DIR: /app/data/analysis
       CASTLE_QUESTION_DIR: /app/data/questions/api_template
-
+      CASTLE_JOB_DB_PATH: /app/data/jobs/jobs.sqlite3
+      CASTLE_VIDEO_STORAGE_DIR: /app/data/videos
+      CASTLE_CLIPS_DIR: /app/data/clips
+      CASTLE_REVIEWS_DIR: /app/data/reviews
     volumes:
-      # Existing video analyses (read-only).
-      - ./data/analysis:/app/data/analysis:ro
-
-      # Generated question results (read/write).
-      - ./data/questions/api_template:/app/data/questions/api_template
-
+      - ./data/analysis:/app/data/analysis
+      - ./data/questions:/app/data/questions
+      - ./data/jobs:/app/data/jobs
+      - ./data/videos:/app/data/videos
+      - ./data/clips:/app/data/clips
+      - ./data/reviews:/app/data/reviews
     restart: unless-stopped
     init: true
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/worker.Dockerfile
+    image: castle-qa-worker:latest
+    container_name: castle-qa-worker
+    environment:
+      CASTLE_ANALYSIS_DIR: /app/data/analysis
+      CASTLE_QUESTION_DIR: /app/data/questions/api_template
+      CASTLE_JOB_DB_PATH: /app/data/jobs/jobs.sqlite3
+      CASTLE_VIDEO_STORAGE_DIR: /app/data/videos
+      CASTLE_CLIPS_DIR: /app/data/clips
+      CASTLE_REVIEWS_DIR: /app/data/reviews
+      VIDEO_UNDERSTANDING_MODE: ${VIDEO_UNDERSTANDING_MODE:-real}
+      VIDEO_MODEL_NAME: ${VIDEO_MODEL_NAME:-Qwen/Qwen2.5-VL-7B-Instruct}
+      VIDEO_FPS: ${VIDEO_FPS:-2.0}
+      MAX_NEW_TOKENS: ${MAX_NEW_TOKENS:-1024}
+    volumes:
+      - ./data/analysis:/app/data/analysis
+      - ./data/questions:/app/data/questions
+      - ./data/jobs:/app/data/jobs
+      - ./data/videos:/app/data/videos
+      - ./data/clips:/app/data/clips
+      - ./data/reviews:/app/data/reviews
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    depends_on:
+      - api
+    restart: unless-stopped
+    init: true
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    image: castle-qa-frontend:latest
+    container_name: castle-qa-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+    restart: unless-stopped

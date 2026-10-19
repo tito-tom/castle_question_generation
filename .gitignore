@@ -27,6 +27,8 @@ data/clips/*
 data/metadata/*
 data/analysis/*
 data/questions/*
+data/jobs/*
+data/reviews/*
 
 # Keep folders in git
 !data/videos/.gitkeep
@@ -34,3 +36,10 @@ data/questions/*
 !data/metadata/.gitkeep
 !data/analysis/.gitkeep
 !data/questions/.gitkeep
+!data/jobs/.gitkeep
+!data/reviews/.gitkeep
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/

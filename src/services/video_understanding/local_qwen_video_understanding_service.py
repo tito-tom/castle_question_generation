@@ -4,7 +4,7 @@ from pathlib import Path
 
 from src.models.clip_result import ClipResult
 from src.models.video_analysis import VideoAnalysis
-from services.video_understanding.video_understanding_service import (
+from src.services.video_understanding.video_understanding_service import (
     VideoUnderstandingService,
 )
 
