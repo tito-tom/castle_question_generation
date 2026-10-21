@@ -14,6 +14,85 @@ export interface VideoItem {
   height?: number;
   fps?: number;
   codec_name?: string;
+  is_temporary?: boolean;
+  session_id?: string;
+  session_token?: string;
+  expires_at?: string;
+}
+
+export interface VideoIntervalSelection {
+  id: string;
+  videoRef: string;
+  startSeconds: number;
+  endSeconds: number;
+  durationSeconds: number;
+  label?: string;
+  createdAt: string;
+}
+
+export type ExtractionMethod =
+  | 'native_ffmpeg_assisted'
+  | 'direct_import'
+  | 'browser_capture';
+
+export type TemporalAlignmentStatus =
+  | 'verified'
+  | 'user_confirmed'
+  | 'approximate'
+  | 'unverified';
+
+export interface StagedClipItem {
+  id: string;
+  file: File;
+  objectUrl: string;
+  filename: string;
+  sizeBytes: number;
+  durationSeconds: number;
+  measuredDurationSeconds?: number;
+  width?: number;
+  height?: number;
+  method: ExtractionMethod;
+  alignmentStatus: TemporalAlignmentStatus;
+  userConfirmedAssociation: boolean;
+  sourceVideoName: string;
+  sourceVideoRef: string; // Collision-resistant sourceInstanceId
+  sourceStartSeconds: number;
+  sourceEndSeconds: number;
+  sourceDurationSeconds: number;
+  durationDeltaSeconds: number;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface LocalVideoItem {
+  sourceType: 'local';
+  sourceInstanceId: string; // Unique collision-resistant client-side UUID
+  file: File;
+  objectUrl: string;
+  filename: string;
+  sizeBytes: number;
+  durationSeconds?: number;
+  width?: number;
+  height?: number;
+}
+
+export interface ServerVideoItem extends VideoItem {
+  sourceType: 'server';
+}
+
+export type ActiveVideoSource = LocalVideoItem | ServerVideoItem;
+
+export function isLocalVideo(video: ActiveVideoSource | null | undefined): video is LocalVideoItem {
+  return video !== null && video !== undefined && video.sourceType === 'local';
+}
+
+export function formatFileSize(bytes: number): string {
+  if (bytes <= 0 || isNaN(bytes)) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const val = bytes / Math.pow(k, i);
+  return `${val.toFixed(val >= 10 || i === 0 ? 0 : 1)} ${sizes[i]}`;
 }
 
 export interface InferenceJob {
@@ -32,10 +111,16 @@ export interface InferenceJob {
 export interface ObservableEvent {
   start_seconds: number;
   end_seconds: number;
+  clip_start_seconds?: number;
+  clip_end_seconds?: number;
+  source_start_seconds?: number | null;
+  source_end_seconds?: number | null;
+  time_offset_uncertainty?: number | null;
   description: string;
   actor?: string | null;
   action?: string | null;
   object?: string | null;
+  object_name?: string | null;
   target?: string | null;
   confidence?: number | null;
 }
@@ -49,6 +134,19 @@ export interface VideoAnalysis {
   objects?: string[];
   summary: string;
   events: ObservableEvent[];
+  source_video_name?: string | null;
+  source_start_seconds?: number | null;
+  source_end_seconds?: number | null;
+  temporal_alignment_status?: string | null;
+  is_temporary?: boolean | null;
+  is_persistent?: boolean | null;
+  video_available?: boolean;
+  is_mock?: boolean;
+  inference_mode?: 'real' | 'mock' | 'legacy_unverified' | 'unknown';
+  sampling_fps?: number | null;
+  runtime_seconds?: number | null;
+  device?: string | null;
+  mock_notice?: string | null;
 }
 
 export interface VideoQAAnswer {
@@ -56,6 +154,8 @@ export interface VideoQAAnswer {
   answer: string;
   confidence: number;
   is_observable: boolean;
+  confidence_type?: string;
+  is_human_reviewed?: boolean;
   uncertainty_notes?: string | null;
   start_seconds?: number | null;
   end_seconds?: number | null;
@@ -64,6 +164,8 @@ export interface VideoQAAnswer {
   video_id?: string | null;
   analysis_id?: string | null;
   clip_url?: string | null;
+  is_mock?: boolean;
+  mock_notice?: string | null;
 }
 
 export interface EventReviewItem {
@@ -110,6 +212,11 @@ export interface AnnotationReviewSession {
   reviewer_id?: string | null;
   overall_status: SessionStatus;
   summary: string;
+  is_persistent?: boolean | null;
+  video_available?: boolean;
+  is_mock?: boolean;
+  inference_mode?: 'real' | 'mock' | 'legacy_unverified' | 'unknown';
+  mock_notice?: string | null;
   events: EventReviewItem[];
   questions: QuestionReviewItem[];
 }

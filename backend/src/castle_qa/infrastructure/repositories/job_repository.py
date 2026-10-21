@@ -500,6 +500,22 @@ class JobRepository:
         return recovered_jobs
 
 
+    def has_active_jobs_for_video(self, video_id: str) -> bool:
+        """
+        Check whether there are any queued or running jobs associated with video_id.
+        Protects media from premature lifecycle cleanup while active jobs depend on it.
+        """
+        with self._sessions() as session:
+            stmt = select(InferenceJobORM).where(
+                InferenceJobORM.status.in_([JobStatus.QUEUED.value, JobStatus.RUNNING.value])
+            )
+            records = session.scalars(stmt).all()
+            for record in records:
+                payload = dict(record.payload) if record.payload else {}
+                if payload.get("video_id") == video_id or video_id in str(payload.get("video_path", "")):
+                    return True
+        return False
+
     def close(self) -> None:
         """
         Dispose of an engine owned by this repository.

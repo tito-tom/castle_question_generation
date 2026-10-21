@@ -10,11 +10,12 @@ class VideoSummaryResponse(BaseModel):
     duration_seconds: float
     size_bytes: int
     created_at: str
+    is_temporary: bool = False
 
 
 class VideoDetailResponse(BaseModel):
     """
-    Detailed metadata for a video.
+    Detailed metadata for a video (without exposing server internal filesystem paths).
     """
     video_id: str
     filename: str
@@ -25,6 +26,17 @@ class VideoDetailResponse(BaseModel):
     height: int | None = None
     fps: float | None = None
     codec_name: str | None = None
+    is_temporary: bool = False
+    session_id: str | None = None
+    session_token: str | None = None
+    expires_at: str | None = None
+    source_filename: str | None = None
+    source_video_name: str | None = None
+    source_start_seconds: float | None = None
+    source_end_seconds: float | None = None
+    extraction_method: str | None = None
+    alignment_status: str | None = None
+    temporal_alignment_status: str | None = None
 
 
 class VideoListResponse(BaseModel):
@@ -67,4 +79,3 @@ class ClipExtractionResponse(BaseModel):
     clip_start: str
     clip_end: str
     duration_seconds: float
-

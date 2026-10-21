@@ -175,3 +175,20 @@ def test_invalid_analysis_id(client: TestClient):
     )
 
     assert response.status_code == 422
+
+
+def test_save_persistent_analysis(client: TestClient):
+    """
+    Verify that save-persistent marks analysis as persistent.
+    """
+    res_before = client.get("/api/v1/analyses/kitchen_clip_1")
+    assert res_before.status_code == 200
+    assert res_before.json().get("is_persistent") is False or res_before.json().get("is_persistent") is None
+
+    res_save = client.post("/api/v1/analyses/kitchen_clip_1/save-persistent")
+    assert res_save.status_code == 200
+    assert res_save.json()["is_persistent"] is True
+
+    res_after = client.get("/api/v1/analyses/kitchen_clip_1")
+    assert res_after.status_code == 200
+    assert res_after.json()["is_persistent"] is True

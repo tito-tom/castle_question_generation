@@ -21,7 +21,7 @@ venv/
 .cache/
 huggingface/*
 
-# Generated data
+# Generated data & databases
 data/videos/*
 data/clips/*
 data/metadata/*
@@ -29,6 +29,11 @@ data/analysis/*
 data/questions/*
 data/jobs/*
 data/reviews/*
+backend/src/data/
+backend/data/
+*.sqlite3
+*.sqlite
+*.db
 
 # Keep folders in git
 !data/videos/.gitkeep
@@ -49,4 +54,15 @@ frontend/.vite/
 *.avi
 *.mov
 *.mkv
-!data/videos/.gitkeep
+!data/videos/.gitkeep
+!frontend/e2e/fixtures/*.mp4
+
+# Playwright
+test-results/
+playwright-report/
+frontend/test-results/
+frontend/playwright-report/
+frontend/.playwright/
+
+# Scratch and temporary scripts
+scratch/

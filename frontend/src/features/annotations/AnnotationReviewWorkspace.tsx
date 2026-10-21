@@ -6,6 +6,13 @@ import {
   Save,
   Clock,
   Download,
+  Copy,
+  FileSpreadsheet,
+  Bookmark,
+  BookmarkCheck,
+  AlertTriangle,
+  RefreshCw,
+  Sparkles,
 } from 'lucide-react';
 import { api } from '../../shared/api/client';
 import {
@@ -20,6 +27,7 @@ interface AnnotationReviewWorkspaceProps {
   onSessionUpdated: (updated: AnnotationReviewSession) => void;
   onOpenExportModal: () => void;
   onSeekInterval: (interval: { start: number; end: number }) => void;
+  latestGenerationId?: string | null;
 }
 
 function getEffectiveStart(e: EventReviewItem): number {
@@ -51,6 +59,7 @@ export const AnnotationReviewWorkspace: React.FC<AnnotationReviewWorkspaceProps>
   onSessionUpdated,
   onOpenExportModal,
   onSeekInterval,
+  latestGenerationId,
 }) => {
   const [activeTab, setActiveTab] = useState<'events' | 'questions'>('events');
   const [editingEventIdx, setEditingEventIdx] = useState<number | null>(null);
@@ -58,6 +67,11 @@ export const AnnotationReviewWorkspace: React.FC<AnnotationReviewWorkspaceProps>
 
   const [editingQuestionIdx, setEditingQuestionIdx] = useState<number | null>(null);
   const [questionEditDraft, setQuestionEditDraft] = useState<Partial<QuestionReviewItem>>({});
+
+  const [copiedJson, setCopiedJson] = useState(false);
+  const [isSavingPersistent, setIsSavingPersistent] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [isSyncingQuestions, setIsSyncingQuestions] = useState(false);
 
   if (!session) {
     return (
@@ -120,31 +134,179 @@ export const AnnotationReviewWorkspace: React.FC<AnnotationReviewWorkspaceProps>
     }
   };
 
+  const handleCopyReviewJson = () => {
+    navigator.clipboard.writeText(JSON.stringify(session, null, 2));
+    setCopiedJson(true);
+    setTimeout(() => setCopiedJson(false), 2000);
+  };
+
+  const handleDownloadReviewJson = () => {
+    const blob = new Blob([JSON.stringify(session, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `review_session_${session.review_id}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleSavePersistent = async () => {
+    if (isSavingPersistent) return;
+    setIsSavingPersistent(true);
+    try {
+      const updated = await api.saveReviewSessionPersistent(session.review_id);
+      onSessionUpdated(updated);
+      setSaveSuccess(true);
+    } catch (err) {
+      console.error('Failed to save review session permanently', err);
+    } finally {
+      setIsSavingPersistent(false);
+    }
+  };
+
+  const handleSyncQuestions = async (genId: string) => {
+    setIsSyncingQuestions(true);
+    try {
+      const updated = await api.syncReviewSessionQuestions(session.review_id, genId);
+      onSessionUpdated(updated);
+    } catch (err) {
+      console.error('Failed to sync questions', err);
+    } finally {
+      setIsSyncingQuestions(false);
+    }
+  };
+
   const totalItems = session.events.length + session.questions.length;
   const acceptedItems =
     session.events.filter((e) => e.status === 'accepted' || e.status === 'edited').length +
     session.questions.filter((q) => q.status === 'accepted' || q.status === 'edited').length;
 
+  const isPersistent = session.is_persistent || saveSuccess;
+  const hasNewerQuestions =
+    latestGenerationId && latestGenerationId !== session.generation_id;
+
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col space-y-4">
+      {/* Prominent MOCK Notice Banner */}
+      {session.is_mock && (
+        <div
+          data-testid="review-mock-banner"
+          className="flex items-start space-x-2.5 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs"
+        >
+          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <span className="font-bold tracking-wide">MOCK REVIEW DATA — SIMULATED CANDIDATES</span>
+            <p className="text-[11px] text-amber-400/80 mt-0.5">
+              These candidate events and questions are derived from mock simulation. Review decisions will be exported with explicit mock test provenance and cannot be classified as verified ground truth.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Legacy / Unverified Notice Banner */}
+      {!session.is_mock && (session.inference_mode === 'legacy_unverified' || session.inference_mode === 'unknown') && (
+        <div
+          data-testid="review-legacy-banner"
+          className="flex items-start space-x-2.5 p-3 rounded-lg bg-slate-800/80 border border-slate-700 text-slate-300 text-xs"
+        >
+          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <span className="font-bold tracking-wide text-amber-300">HISTORICAL DATA — PROVENANCE UNVERIFIED</span>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              These candidate items originate from historical archives without verified inference provenance. Exports will indicate unverified status to protect dataset integrity.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Header with Stats & Export */}
       <div className="flex flex-wrap items-center justify-between border-b border-slate-800 pb-3 gap-2">
         <div>
-          <div className="flex items-center space-x-2">
+          <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-sm font-semibold text-white">Whodunnit Review Workspace</h2>
             <span className="text-[11px] bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 px-2 py-0.5 rounded font-mono">
               {acceptedItems}/{totalItems} Verified
             </span>
+            {isPersistent && (
+              <span
+                data-testid="review-persistent-badge"
+                className="text-[10px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 rounded font-mono flex items-center space-x-1"
+              >
+                <BookmarkCheck className="w-3 h-3 text-emerald-400" />
+                <span>Saved to Library</span>
+              </span>
+            )}
+            {session.video_available === false && (
+              <span
+                data-testid="review-video-unavailable-badge"
+                className="text-[10px] bg-amber-500/10 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded font-mono flex items-center space-x-1"
+              >
+                <AlertTriangle className="w-3 h-3 text-amber-400" />
+                <span>Original clip expired (results preserved)</span>
+              </span>
+            )}
           </div>
           <p className="text-[11px] text-slate-400 mt-0.5">
             Human verification loop: accept, edit, or reject AI detections
           </p>
         </div>
 
-        <div className="flex items-center space-x-2">
+        {/* Action Toolbar */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            onClick={handleCopyReviewJson}
+            data-testid="copy-review-json-btn"
+            className="flex items-center space-x-1 text-xs text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg border border-slate-700 transition"
+            title="Copy review session JSON"
+          >
+            {copiedJson ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+            <span>{copiedJson ? 'Copied JSON' : 'Copy JSON'}</span>
+          </button>
+
+          <button
+            onClick={handleDownloadReviewJson}
+            data-testid="download-review-json-btn"
+            className="flex items-center space-x-1 text-xs text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg border border-slate-700 transition"
+            title="Download review session as JSON"
+          >
+            <Download className="w-3.5 h-3.5 text-slate-400" />
+            <span>JSON</span>
+          </button>
+
+          <a
+            href={api.getWhodunnitCsvExportUrl(session.review_id)}
+            download
+            data-testid="download-review-csv-link"
+            className="flex items-center space-x-1 text-xs text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg border border-slate-700 transition"
+            title="Download CSV spreadsheet"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+            <span>CSV</span>
+          </a>
+
+          {!isPersistent && (
+            <button
+              onClick={handleSavePersistent}
+              disabled={isSavingPersistent}
+              data-testid="save-review-persistent-btn"
+              className="flex items-center space-x-1 text-xs text-indigo-200 hover:text-white bg-indigo-950/70 hover:bg-indigo-900 border border-indigo-700/60 px-2.5 py-1.5 rounded-lg transition shadow-sm font-medium"
+              title="Save review session permanently to library"
+            >
+              {isSavingPersistent ? (
+                <span className="w-3 h-3 border-2 border-indigo-400/40 border-t-indigo-400 rounded-full animate-spin" />
+              ) : (
+                <Bookmark className="w-3.5 h-3.5 text-indigo-400" />
+              )}
+              <span>Save to Library</span>
+            </button>
+          )}
+
           <button
             onClick={onOpenExportModal}
-            className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition shadow"
+            data-testid="open-whodunnit-export-btn"
+            className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition shadow ml-1"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Export Whodunnit Package</span>
@@ -152,10 +314,32 @@ export const AnnotationReviewWorkspace: React.FC<AnnotationReviewWorkspaceProps>
         </div>
       </div>
 
+      {/* Sync questions alert if newer questions exist */}
+      {hasNewerQuestions && (
+        <div
+          data-testid="sync-questions-alert"
+          className="bg-indigo-950/40 border border-indigo-800/50 rounded-lg p-2.5 flex items-center justify-between text-xs text-indigo-200"
+        >
+          <div className="flex items-center space-x-2">
+            <Sparkles className="w-4 h-4 text-indigo-400 shrink-0" />
+            <span>Newly generated questions are available ({latestGenerationId}).</span>
+          </div>
+          <button
+            onClick={() => latestGenerationId && handleSyncQuestions(latestGenerationId)}
+            disabled={isSyncingQuestions}
+            className="flex items-center space-x-1 bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 py-1 rounded text-xs transition"
+          >
+            <RefreshCw className={`w-3 h-3 ${isSyncingQuestions ? 'animate-spin' : ''}`} />
+            <span>Sync Questions</span>
+          </button>
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="flex border-b border-slate-800">
         <button
           onClick={() => setActiveTab('events')}
+          data-testid="review-tab-events"
           className={`pb-2 px-3 text-xs font-medium border-b-2 transition ${
             activeTab === 'events'
               ? 'border-indigo-500 text-indigo-400'
@@ -167,6 +351,7 @@ export const AnnotationReviewWorkspace: React.FC<AnnotationReviewWorkspaceProps>
 
         <button
           onClick={() => setActiveTab('questions')}
+          data-testid="review-tab-questions"
           className={`pb-2 px-3 text-xs font-medium border-b-2 transition ${
             activeTab === 'questions'
               ? 'border-indigo-500 text-indigo-400'
@@ -186,6 +371,7 @@ export const AnnotationReviewWorkspace: React.FC<AnnotationReviewWorkspaceProps>
             return (
               <div
                 key={e.event_index}
+                data-testid={`event-review-item-${e.event_index}`}
                 className={`p-3 rounded-lg border text-xs transition ${
                   e.status === 'accepted'
                     ? 'bg-emerald-950/20 border-emerald-800/40'
@@ -334,6 +520,7 @@ export const AnnotationReviewWorkspace: React.FC<AnnotationReviewWorkspaceProps>
                         <button
                           onClick={() => handleEventStatus(e.event_index, 'accepted')}
                           title="Accept"
+                          data-testid={`accept-event-btn-${e.event_index}`}
                           className="p-1 rounded hover:bg-emerald-900/40 text-slate-400 hover:text-emerald-400 transition"
                         >
                           <Check className="w-3.5 h-3.5" />
@@ -351,6 +538,7 @@ export const AnnotationReviewWorkspace: React.FC<AnnotationReviewWorkspaceProps>
                             });
                           }}
                           title="Edit"
+                          data-testid={`edit-event-btn-${e.event_index}`}
                           className="p-1 rounded hover:bg-indigo-900/40 text-slate-400 hover:text-indigo-400 transition"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
@@ -359,6 +547,7 @@ export const AnnotationReviewWorkspace: React.FC<AnnotationReviewWorkspaceProps>
                         <button
                           onClick={() => handleEventStatus(e.event_index, 'rejected')}
                           title="Reject"
+                          data-testid={`reject-event-btn-${e.event_index}`}
                           className="p-1 rounded hover:bg-rose-900/40 text-slate-400 hover:text-rose-400 transition"
                         >
                           <X className="w-3.5 h-3.5" />
@@ -397,6 +586,7 @@ export const AnnotationReviewWorkspace: React.FC<AnnotationReviewWorkspaceProps>
               return (
                 <div
                   key={q.question_index}
+                  data-testid={`question-review-item-${q.question_index}`}
                   className={`p-3 rounded-lg border text-xs transition ${
                     q.status === 'accepted'
                       ? 'bg-emerald-950/20 border-emerald-800/40'
@@ -476,6 +666,7 @@ export const AnnotationReviewWorkspace: React.FC<AnnotationReviewWorkspaceProps>
                           <button
                             onClick={() => handleQuestionStatus(q.question_index, 'accepted')}
                             title="Accept"
+                            data-testid={`accept-question-btn-${q.question_index}`}
                             className="p-1 rounded hover:bg-emerald-900/40 text-slate-400 hover:text-emerald-400 transition"
                           >
                             <Check className="w-3.5 h-3.5" />
@@ -490,6 +681,7 @@ export const AnnotationReviewWorkspace: React.FC<AnnotationReviewWorkspaceProps>
                               });
                             }}
                             title="Edit"
+                            data-testid={`edit-question-btn-${q.question_index}`}
                             className="p-1 rounded hover:bg-indigo-900/40 text-slate-400 hover:text-indigo-400 transition"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
@@ -498,6 +690,7 @@ export const AnnotationReviewWorkspace: React.FC<AnnotationReviewWorkspaceProps>
                           <button
                             onClick={() => handleQuestionStatus(q.question_index, 'rejected')}
                             title="Reject"
+                            data-testid={`reject-question-btn-${q.question_index}`}
                             className="p-1 rounded hover:bg-rose-900/40 text-slate-400 hover:text-rose-400 transition"
                           >
                             <X className="w-3.5 h-3.5" />
@@ -535,4 +728,3 @@ export const AnnotationReviewWorkspace: React.FC<AnnotationReviewWorkspaceProps>
     </div>
   );
 };
-

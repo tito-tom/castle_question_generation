@@ -161,6 +161,12 @@ class LocalQwenVideoUnderstandingService(
 
         data = self._parse_json(response)
 
+        data["is_mock"] = False
+        data["inference_mode"] = "real"
+        data["sampling_fps"] = self._fps
+        data["runtime_seconds"] = elapsed
+        data["device"] = f"cuda:{self._torch.cuda.current_device()}" if self._torch.cuda.is_available() else "cpu"
+
         return VideoAnalysis.from_dict(
             data = data,
             clip_path = clip.clip_path,

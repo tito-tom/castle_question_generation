@@ -31,6 +31,8 @@ class VideoQAAnswer:
     question: str
     answer: str
     confidence: float
+    confidence_type: str = "heuristic_score"
+    is_human_reviewed: bool = False
     is_observable: bool = True
     uncertainty_notes: str | None = None
     evidence: EvidenceInterval | None = None
@@ -44,6 +46,8 @@ class VideoQAAnswer:
             "question": self.question,
             "answer": self.answer,
             "confidence": self.confidence,
+            "confidence_type": self.confidence_type,
+            "is_human_reviewed": self.is_human_reviewed,
             "is_observable": self.is_observable,
             "uncertainty_notes": self.uncertainty_notes,
             "evidence": self.evidence.to_dict() if self.evidence else None,
@@ -65,6 +69,8 @@ class VideoQAAnswer:
             question=data["question"],
             answer=data["answer"],
             confidence=float(data.get("confidence", 1.0)),
+            confidence_type=data.get("confidence_type", "heuristic_score"),
+            is_human_reviewed=bool(data.get("is_human_reviewed", False)),
             is_observable=bool(data.get("is_observable", True)),
             uncertainty_notes=data.get("uncertainty_notes"),
             evidence=evidence,

@@ -49,4 +49,9 @@ class MockVideoUnderstandingService(
                 "Person 1 uses a kettle "
                 "while person 2 is nearby."
             ),
+            is_mock = True,
+            inference_mode = "mock",
+            sampling_fps = 1.0,
+            runtime_seconds = 0.05,
+            device = "cpu_simulation",
         )

@@ -177,3 +177,64 @@ def test_export_whodunnit_json_and_csv(client_and_repo):
     assert "text/csv" in csv_res.headers["content-type"]
     assert "dining table" in csv_res.text
 
+
+
+def test_sync_questions_and_session_update(client_and_repo):
+    client, repo = client_and_repo
+
+    # 1. Create review session initially without questions
+    create_res = client.post(
+        "/api/v1/annotations/sessions",
+        json={
+            "analysis_id": "dining_analysis",
+            "reviewer_id": "tester",
+        },
+    )
+    assert create_res.status_code == 201
+    review_id = create_res.json()["review_id"]
+    assert len(create_res.json()["questions"]) == 0
+
+    # 2. Sync questions via POST /sessions/{review_id}/sync-questions
+    sync_res = client.post(
+        f"/api/v1/annotations/sessions/{review_id}/sync-questions",
+        json={"generation_id": "gen_123"},
+    )
+    assert sync_res.status_code == 200
+    synced_data = sync_res.json()
+    assert len(synced_data["questions"]) == 1
+    assert synced_data["questions"][0]["original_question"] == "Who places the plate on the table?"
+    assert synced_data["generation_id"] == "gen_123"
+
+    # 3. Create or load again with generation_id verifies questions are preserved/synced
+    reload_res = client.post(
+        "/api/v1/annotations/sessions",
+        json={
+            "analysis_id": "dining_analysis",
+            "generation_id": "gen_123",
+        },
+    )
+    assert reload_res.status_code == 201
+    assert len(reload_res.json()["questions"]) == 1
+
+
+def test_save_persistent_review_session(client_and_repo):
+    client, repo = client_and_repo
+
+    create_res = client.post(
+        "/api/v1/annotations/sessions",
+        json={
+            "analysis_id": "dining_analysis",
+            "generation_id": "gen_123",
+        },
+    )
+    review_id = create_res.json()["review_id"]
+    assert create_res.json()["is_persistent"] is False
+
+    save_res = client.post(f"/api/v1/annotations/sessions/{review_id}/save-persistent")
+    assert save_res.status_code == 200
+    assert save_res.json()["is_persistent"] is True
+
+    # Stored session in repo also has is_persistent True
+    stored = repo.load(review_id)
+    assert stored is not None
+    assert stored.is_persistent is True

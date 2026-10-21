@@ -51,5 +51,6 @@ class QuestionGenerationResponse(BaseModel):
     generator: str
 
     question_count: int = Field(ge=0)
+    is_persistent: bool = False
 
     questions: list[QuestionCandidateResponse]

@@ -1,6 +1,22 @@
-import React from 'react';
-import { Clock, Play, User, Target, Box, Sparkles } from 'lucide-react';
+import React, { useState } from 'react';
+import {
+  Clock,
+  Play,
+  User,
+  Target,
+  Box,
+  Sparkles,
+  AlertTriangle,
+  Copy,
+  Check,
+  Download,
+  Bookmark,
+  BookmarkCheck,
+  FileText,
+  Code,
+} from 'lucide-react';
 import { ObservableEvent, VideoAnalysis } from '../../shared/types';
+import { api } from '../../shared/api/client';
 
 interface TimelineViewProps {
   analysis: VideoAnalysis | null;
@@ -8,6 +24,7 @@ interface TimelineViewProps {
   onSelectInterval: (interval: { start: number; end: number }) => void;
   onRunAnalysis?: () => void;
   isAnalyzing?: boolean;
+  onAnalysisUpdated?: (updated: VideoAnalysis) => void;
 }
 
 export const TimelineView: React.FC<TimelineViewProps> = ({
@@ -16,7 +33,93 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
   onSelectInterval,
   onRunAnalysis,
   isAnalyzing,
+  onAnalysisUpdated,
 }) => {
+  const [copiedType, setCopiedType] = useState<'summary' | 'events' | 'json' | null>(null);
+  const [isSavingPersistent, setIsSavingPersistent] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  const formatSeconds = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    const ms = Math.floor((sec % 1) * 10);
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ms}`;
+  };
+
+  const handleCopy = (type: 'summary' | 'events' | 'json', text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedType(type);
+    setTimeout(() => {
+      setCopiedType((prev) => (prev === type ? null : prev));
+    }, 2000);
+  };
+
+  const handleCopySummary = () => {
+    if (!analysis) return;
+    handleCopy('summary', analysis.summary);
+  };
+
+  const handleCopyEvents = () => {
+    if (!analysis) return;
+    const text = analysis.events
+      .map((e, i) => {
+        const clipStart = e.clip_start_seconds ?? e.start_seconds;
+        const clipEnd = e.clip_end_seconds ?? e.end_seconds;
+        const clip = `${formatSeconds(clipStart)} - ${formatSeconds(clipEnd)}`;
+        const src =
+          e.source_start_seconds !== null && e.source_start_seconds !== undefined
+            ? ` (Source: ${formatSeconds(e.source_start_seconds)} - ${formatSeconds(e.source_end_seconds || 0)})`
+            : '';
+        const meta = [
+          e.actor ? `Actor: ${e.actor}` : '',
+          e.action ? `Action: ${e.action}` : '',
+          e.object || e.object_name ? `Object: ${e.object || e.object_name}` : '',
+          e.target ? `Target: ${e.target}` : '',
+        ]
+          .filter(Boolean)
+          .join(' | ');
+
+        return `[Event ${i + 1}] ${clip}${src}\n${e.description}${meta ? `\nDetails: ${meta}` : ''}`;
+      })
+      .join('\n\n');
+
+    handleCopy('events', text);
+  };
+
+  const handleCopyJson = () => {
+    if (!analysis) return;
+    handleCopy('json', JSON.stringify(analysis, null, 2));
+  };
+
+  const handleDownloadJson = () => {
+    if (!analysis) return;
+    const blob = new Blob([JSON.stringify(analysis, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `analysis_${analysis.analysis_id}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleSaveToLibrary = async () => {
+    if (!analysis || isSavingPersistent) return;
+    setIsSavingPersistent(true);
+    try {
+      const updated = await api.saveAnalysisPersistent(analysis.analysis_id);
+      if (onAnalysisUpdated) {
+        onAnalysisUpdated(updated);
+      }
+      setSaveSuccess(true);
+    } catch (err) {
+      console.error('Failed to save analysis permanently', err);
+    } finally {
+      setIsSavingPersistent(false);
+    }
+  };
+
   if (!analysis) {
     return (
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 text-center flex flex-col items-center justify-center">
@@ -25,7 +128,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         </div>
         <h3 className="text-base font-medium text-white mb-1">No Analysis Available</h3>
         <p className="text-xs text-slate-400 max-w-sm mb-4">
-          Run Qwen2.5-VL video understanding to extract a chronological timeline of observable events and factual descriptions.
+          Run Qwen2.5-VL video understanding on a staged short clip or server video to extract a chronological timeline of observable events and factual descriptions.
         </p>
         {onRunAnalysis && (
           <button
@@ -50,39 +153,263 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     );
   }
 
-  const formatSeconds = (sec: number) => {
-    const m = Math.floor(sec / 60);
-    const s = Math.floor(sec % 60);
-    const ms = Math.floor((sec % 1) * 10);
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ms}`;
-  };
+  const isPersistent = analysis.is_persistent || saveSuccess;
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col space-y-4">
-      {/* Header Info */}
-      <div className="border-b border-slate-800 pb-3 flex items-start justify-between">
-        <div>
-          <div className="flex items-center space-x-2">
-            <h2 className="text-sm font-semibold text-white">Chronological Event Timeline</h2>
-            <span className="text-[11px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700">
-              {analysis.events.length} events
-            </span>
+      {/* Prominent MOCK / TEST DATA Notice when simulated */}
+      {analysis.is_mock && (
+        <div
+          data-testid="mock-inference-banner"
+          className="flex items-start space-x-2.5 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs"
+        >
+          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <span className="font-bold tracking-wide">MOCK / TEST DATA — NOT REAL VIDEO ANALYSIS</span>
+            <p className="text-[11px] text-amber-400/80 mt-0.5">
+              These events and observations were generated by deterministic simulation for development and testing. They do not represent genuine visual observations from Qwen2.5-VL.
+            </p>
           </div>
-          <p className="text-xs text-slate-400 mt-1">{analysis.summary}</p>
+          {analysis.sampling_fps !== undefined && analysis.sampling_fps !== null && (
+            <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded font-mono shrink-0">
+              Sample: {analysis.sampling_fps} FPS
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Legacy / Unverified Provenance Notice */}
+      {!analysis.is_mock && (analysis.inference_mode === 'legacy_unverified' || analysis.inference_mode === 'unknown') && (
+        <div
+          data-testid="legacy-unverified-banner"
+          className="flex items-start space-x-2.5 p-3 rounded-lg bg-slate-800/80 border border-slate-700 text-slate-300 text-xs"
+        >
+          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <span className="font-bold tracking-wide text-amber-300">HISTORICAL DATA — PROVENANCE UNVERIFIED</span>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              This analysis was loaded from a historical artifact without recorded inference provenance. It cannot be used as verified training ground truth until independently confirmed.
+            </p>
+          </div>
+          <span className="text-[10px] bg-slate-700 text-slate-300 border border-slate-600 px-2 py-0.5 rounded font-mono shrink-0">
+            Legacy Archive
+          </span>
+        </div>
+      )}
+
+      {/* Header Info & Actions Toolbar */}
+      <div className="border-b border-slate-800 pb-3 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-sm font-semibold text-white">Chronological Event Timeline</h2>
+              <span className="text-[11px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700">
+                {analysis.events.length} events
+              </span>
+              {analysis.is_temporary && (
+                <span className="text-[10px] bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 px-1.5 py-0.5 rounded font-mono">
+                  Temporary Clip
+                </span>
+              )}
+              {analysis.is_mock ? (
+                <span
+                  data-testid="mock-inference-badge"
+                  className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-1.5 py-0.5 rounded font-mono font-medium"
+                >
+                  Mock Engine
+                </span>
+              ) : (analysis.inference_mode === 'legacy_unverified' || analysis.inference_mode === 'unknown') ? (
+                <span
+                  data-testid="legacy-unverified-badge"
+                  className="text-[10px] bg-slate-700 text-slate-300 border border-slate-600 px-1.5 py-0.5 rounded font-mono font-medium"
+                >
+                  Legacy Unverified
+                </span>
+              ) : (
+                <span
+                  data-testid="real-inference-badge"
+                  className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-1.5 py-0.5 rounded font-mono font-medium"
+                >
+                  Real Qwen2.5-VL
+                </span>
+              )}
+              {isPersistent && (
+                <span
+                  data-testid="analysis-persistent-badge"
+                  className="text-[10px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 rounded font-mono flex items-center space-x-1"
+                >
+                  <BookmarkCheck className="w-3 h-3 text-emerald-400" />
+                  <span>Saved in Library</span>
+                </span>
+              )}
+              {analysis.video_available === false && (
+                <span
+                  data-testid="analysis-video-unavailable-badge"
+                  className="text-[10px] bg-amber-500/10 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded font-mono flex items-center space-x-1"
+                >
+                  <AlertTriangle className="w-3 h-3 text-amber-400" />
+                  <span>Original clip expired (results preserved)</span>
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-400 mt-1">{analysis.summary}</p>
+          </div>
+
+          {analysis.scene && (
+            <span className="text-xs bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 px-2.5 py-1 rounded-md font-mono shrink-0">
+              {analysis.scene}
+            </span>
+          )}
         </div>
 
-        {analysis.scene && (
-          <span className="text-xs bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 px-2.5 py-1 rounded-md font-mono">
-            {analysis.scene}
-          </span>
+        {/* Source mapping metadata if available */}
+        {analysis.source_video_name && (
+          <div className="flex items-center space-x-2 text-[11px] text-slate-400 font-mono">
+            <span className="text-emerald-400 font-semibold">Source: {analysis.source_video_name}</span>
+            {analysis.source_start_seconds !== undefined && analysis.source_start_seconds !== null && (
+              <span className="text-slate-300">
+                ({formatSeconds(analysis.source_start_seconds)} → {formatSeconds(analysis.source_end_seconds || 0)})
+              </span>
+            )}
+            {analysis.temporal_alignment_status && (
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                {analysis.temporal_alignment_status}
+              </span>
+            )}
+          </div>
         )}
+
+        {/* Participants & Objects Chips */}
+        {((analysis.participants && analysis.participants.length > 0) ||
+          (analysis.objects && analysis.objects.length > 0)) && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {analysis.participants?.map((participant, pIdx) => (
+              <span
+                key={`p-${pIdx}`}
+                className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] bg-indigo-950/40 text-indigo-300 border border-indigo-800/40"
+              >
+                <User className="w-2.5 h-2.5 text-indigo-400" />
+                <span>{participant}</span>
+              </span>
+            ))}
+            {analysis.objects?.map((objectItem, oIdx) => (
+              <span
+                key={`o-${oIdx}`}
+                className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] bg-amber-950/40 text-amber-300 border border-amber-800/40"
+              >
+                <Box className="w-2.5 h-2.5 text-amber-400" />
+                <span>{objectItem}</span>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Action Toolbar: Copy, Download & Save Actions */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/60">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              onClick={handleCopySummary}
+              data-testid="copy-summary-btn"
+              className="flex items-center space-x-1 text-xs text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 px-2.5 py-1 rounded-lg border border-slate-700 transition"
+              title="Copy video summary to clipboard"
+            >
+              {copiedType === 'summary' ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-emerald-400 font-medium">Copied Summary</span>
+                </>
+              ) : (
+                <>
+                  <FileText className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Copy Summary</span>
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={handleCopyEvents}
+              data-testid="copy-events-btn"
+              className="flex items-center space-x-1 text-xs text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 px-2.5 py-1 rounded-lg border border-slate-700 transition"
+              title="Copy plain-text event list with timestamps"
+            >
+              {copiedType === 'events' ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-emerald-400 font-medium">Copied Events</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Copy Events</span>
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={handleCopyJson}
+              data-testid="copy-analysis-json-btn"
+              className="flex items-center space-x-1 text-xs text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 px-2.5 py-1 rounded-lg border border-slate-700 transition"
+              title="Copy complete analysis JSON payload"
+            >
+              {copiedType === 'json' ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-emerald-400 font-medium">Copied JSON</span>
+                </>
+              ) : (
+                <>
+                  <Code className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Copy JSON</span>
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={handleDownloadJson}
+              data-testid="download-analysis-json-btn"
+              className="flex items-center space-x-1 text-xs text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 px-2.5 py-1 rounded-lg border border-slate-700 transition"
+              title="Download analysis as a JSON file"
+            >
+              <Download className="w-3.5 h-3.5 text-slate-400" />
+              <span>Download JSON</span>
+            </button>
+          </div>
+
+          {/* Explicit Save button for temporary analyses */}
+          {analysis.is_temporary && !isPersistent && (
+            <button
+              onClick={handleSaveToLibrary}
+              disabled={isSavingPersistent}
+              data-testid="save-analysis-persistent-btn"
+              className="flex items-center space-x-1.5 text-xs text-indigo-200 hover:text-white bg-indigo-950/70 hover:bg-indigo-900 border border-indigo-700/60 px-3 py-1 rounded-lg transition shadow-sm font-medium"
+              title="Promote this temporary analysis to permanent storage"
+            >
+              {isSavingPersistent ? (
+                <span className="w-3 h-3 border-2 border-indigo-400/40 border-t-indigo-400 rounded-full animate-spin" />
+              ) : (
+                <Bookmark className="w-3.5 h-3.5 text-indigo-400" />
+              )}
+              <span>Save to Library</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Events List */}
       <div className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
         {analysis.events.map((event, idx) => {
-          const isActive =
-            currentTime >= event.start_seconds && currentTime <= event.end_seconds;
+          const clipStart = event.clip_start_seconds ?? event.start_seconds;
+          const clipEnd = event.clip_end_seconds ?? event.end_seconds;
+          const hasSourceMapping =
+            event.source_start_seconds !== null && event.source_start_seconds !== undefined;
+          const sourceStart = event.source_start_seconds ?? 0;
+          const sourceEnd = event.source_end_seconds ?? 0;
+          const uncertainty = event.time_offset_uncertainty ?? 0;
+
+          const isActive = hasSourceMapping
+            ? (currentTime >= sourceStart && currentTime <= sourceEnd) ||
+              (currentTime >= clipStart && currentTime <= clipEnd)
+            : currentTime >= clipStart && currentTime <= clipEnd;
 
           return (
             <div
@@ -94,13 +421,42 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
               }`}
             >
               <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center space-x-2">
-                  <span className="font-mono text-xs text-indigo-400 bg-indigo-950/60 border border-indigo-800/60 px-2 py-0.5 rounded flex items-center space-x-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {/* Clip relative timestamp */}
+                  <span
+                    data-testid="event-clip-time"
+                    className="font-mono text-xs text-indigo-400 bg-indigo-950/60 border border-indigo-800/60 px-2 py-0.5 rounded flex items-center space-x-1"
+                    title="Clip-relative interval"
+                  >
                     <Clock className="w-3 h-3" />
                     <span>
-                      {formatSeconds(event.start_seconds)} - {formatSeconds(event.end_seconds)}
+                      {formatSeconds(clipStart)} - {formatSeconds(clipEnd)}
                     </span>
                   </span>
+
+                  {/* Source mapped timestamp */}
+                  {hasSourceMapping && (
+                    <span
+                      data-testid="event-source-time"
+                      className="font-mono text-xs text-emerald-400 bg-emerald-950/50 border border-emerald-800/50 px-2 py-0.5 rounded flex items-center space-x-1"
+                      title="Source-mapped interval in original long video"
+                    >
+                      <Clock className="w-3 h-3" />
+                      <span>Source: {formatSeconds(sourceStart)} - {formatSeconds(sourceEnd)}</span>
+                    </span>
+                  )}
+
+                  {/* Uncertainty badge */}
+                  {uncertainty > 0 && (
+                    <span
+                      data-testid="event-uncertainty-badge"
+                      className="text-[10px] text-amber-300 font-mono bg-amber-950/40 border border-amber-800/40 px-1.5 py-0.5 rounded flex items-center space-x-1"
+                      title={`Temporal offset uncertainty of ±${uncertainty.toFixed(2)}s`}
+                    >
+                      <AlertTriangle className="w-2.5 h-2.5 text-amber-400" />
+                      <span>±{uncertainty.toFixed(2)}s offset</span>
+                    </span>
+                  )}
 
                   {event.confidence !== null && event.confidence !== undefined && (
                     <span className="text-[10px] text-emerald-400 font-mono bg-emerald-950/40 border border-emerald-800/40 px-1.5 py-0.5 rounded">
@@ -112,14 +468,16 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                 <button
                   onClick={() =>
                     onSelectInterval({
-                      start: event.start_seconds,
-                      end: event.end_seconds,
+                      start: hasSourceMapping ? sourceStart : clipStart,
+                      end: hasSourceMapping ? sourceEnd : clipEnd,
                     })
                   }
-                  className="flex items-center space-x-1 text-xs text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-800 px-2.5 py-1 rounded transition"
+                  data-testid={`play-event-interval-${idx}`}
+                  className="flex items-center space-x-1 text-xs text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-800 px-2.5 py-1 rounded transition shrink-0 ml-2"
+                  title={hasSourceMapping ? 'Seek to event in source video' : 'Seek to event in clip'}
                 >
                   <Play className="w-3 h-3" />
-                  <span>Play interval</span>
+                  <span>{hasSourceMapping ? 'Play in source' : 'Play interval'}</span>
                 </button>
               </div>
 
@@ -140,10 +498,10 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                     action: {event.action}
                   </span>
                 )}
-                {event.object && (
+                {(event.object || event.object_name) && (
                   <span className="flex items-center space-x-1 bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700">
                     <Box className="w-2.5 h-2.5 text-amber-400" />
-                    <span>{event.object}</span>
+                    <span>{event.object || event.object_name}</span>
                   </span>
                 )}
                 {event.target && (
@@ -160,4 +518,3 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     </div>
   );
 };
-

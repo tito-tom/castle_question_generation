@@ -21,7 +21,7 @@ class VideoUnderstandingFactory:
                 MockVideoUnderstandingService()
             )
 
-        if mode == "qwen_local":
+        if mode in ("real", "qwen_local"):
 
             # Lazy import is intentional
 
@@ -45,7 +45,6 @@ class VideoUnderstandingFactory:
             )
 
         raise ValueError(
-            "Unknown video understanding "
-            f"mode: {mode}"
+            f"Unsupported VIDEO_UNDERSTANDING_MODE: '{mode}'. Valid modes are 'real' and 'mock'."
         )
 

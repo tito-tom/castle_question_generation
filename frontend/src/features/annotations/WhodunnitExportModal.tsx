@@ -132,6 +132,7 @@ export const WhodunnitExportModal: React.FC<WhodunnitExportModalProps> = ({
             </button>
             <button
               onClick={handleDownloadJson}
+              disabled={loading || !data}
               className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-4 py-2 rounded-lg transition shadow"
             >
               <Download className="w-3.5 h-3.5" />

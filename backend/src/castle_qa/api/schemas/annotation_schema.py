@@ -38,6 +38,10 @@ class SessionStatusUpdateRequest(BaseModel):
     summary: str | None = None
 
 
+class SyncQuestionsRequest(BaseModel):
+    generation_id: str = Field(..., min_length=1, max_length=200)
+
+
 class EventReviewResponse(BaseModel):
     event_index: int
     original_start_seconds: float
@@ -82,6 +86,11 @@ class ReviewSessionResponse(BaseModel):
     reviewer_id: str | None = None
     overall_status: SessionStatus
     summary: str
+    is_persistent: bool = False
+    video_available: bool = True
+    is_mock: bool = False
+    inference_mode: str = 'real'
+    mock_notice: str | None = None
     events: list[EventReviewResponse]
     questions: list[QuestionReviewResponse]
 
@@ -96,4 +105,5 @@ class ReviewSessionSummary(BaseModel):
     total_questions: int
     accepted_events: int
     accepted_questions: int
-
+    is_persistent: bool = False
+    video_available: bool = True

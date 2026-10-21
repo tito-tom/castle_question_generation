@@ -2,22 +2,22 @@
 
 **AI Video Understanding & Grounded Question-Answering for Whodunnit Annotation Assistance**
 
-CASTLE QA Studio is an end-to-end platform designed to assist human annotators working on the Whodunnit video understanding benchmark. It pairs a **FastAPI** backend, an asynchronous **GPU inference queue** running **Qwen2.5-VL**, and a modern **ReactJS + Vite + TypeScript** frontend.
+CASTLE QA Studio is an annotation assistance platform designed to extract, inspect, and evaluate event timelines and question-answering pairs from long video recordings. It pairs a **FastAPI** backend, an asynchronous **worker queue** running **Qwen2.5-VL**, and a modern **ReactJS + Vite + TypeScript** frontend.
 
 ---
 
 ## 1. System Capabilities
 
-- **Video Ingestion & Storage**: Safe upload, duration and size validation, atomic writes, FFprobe metadata extraction, and subclip extraction.
-- **Qwen2.5-VL Video Understanding**: Extracts chronological observable events with precise timestamp intervals (`start_seconds`, `end_seconds`), actor identification, actions, objects, targets, and concise factual summaries.
-- **Grounded Video Question Answering (Video QA)**: Users ask questions about video content and receive grounded answers with:
-  - Temporal video evidence intervals (`start_seconds`, `end_seconds`).
+- **Local-First Privacy**: Original 1-hour CASTLE recordings (~1.28 GB) remain on the annotator's computer. Only short, user-selected clips (<= 120s, <= 200MB) are uploaded to the backend.
+- **Qwen2.5-VL Video Understanding**: Extracts chronological observable events with dual timestamp intervals (`start_seconds`, `end_seconds` and source-relative `source_start_seconds`, `source_end_seconds`), actor identification, actions, objects, targets, and concise factual summaries.
+- **Grounded Video Question Answering (Video QA)**: Annotators ask natural language questions about video content and receive answers grounded with:
+  - Temporal video evidence intervals.
   - Observability status (distinguishing directly observable facts from uncertain interpretations).
-  - Confidence scoring.
+  - Evidence-matching confidence scores.
   - One-click timeline seeking directly to the supporting evidence in the video player.
 - **Human Annotation Review Loop**: Annotators review, edit, accept, or reject AI-extracted events and generated questions.
-- **Whodunnit Export Adapter**: Exports human-verified annotations into Whodunnit-compatible JSON and CSV formats with candidate distractors derived from other scene actors.
-- **Worker Crash Recovery**: Heartbeat tracking, atomic job claims, retry counts, and automatic stale job recovery without duplicate results.
+- **Whodunnit Export Adapter**: Exports human-verified annotations into Whodunnit-compatible JSON and CSV formats with candidate distractors derived from scene actors.
+- **Temporary Storage Lifecycle**: 24-hour meaningful inactivity TTL, cross-process stream lease tracking, 30-second active upload reservation refreshing, and persistent library saving.
 
 ---
 
@@ -26,7 +26,7 @@ CASTLE QA Studio is an end-to-end platform designed to assist human annotators w
 ```
                       ┌────────────────────────────────────────┐
                       │    ReactJS Frontend (Vite + TS)        │
-                      │  - Video player with evidence scrubber │
+                      │  - Video player with interval scrubber │
                       │  - Chronological event timeline        │
                       │  - Grounded Video QA query panel       │
                       │  - Whodunnit review & export modal     │
@@ -54,7 +54,7 @@ CASTLE QA Studio is an end-to-end platform designed to assist human annotators w
              └───────────────────────────┬─────────────────────────────┘
                                          ▼
                       ┌────────────────────────────────────────┐
-                      │     GPU Inference Worker (Qwen2.5-VL)  │
+                      │   Inference Worker (Mock or Qwen GPU)  │
                       │  - Background heartbeat thread         │
                       │  - Video understanding analysis        │
                       │  - Grounded question generation        │
@@ -63,88 +63,86 @@ CASTLE QA Studio is an end-to-end platform designed to assist human annotators w
 
 ---
 
-## 3. Local Development (Windows / CPU)
+## 3. Quick Start (Local Laptop Development)
 
-Local CPU testing and development can be performed on Windows without an NVIDIA GPU using the built-in mock and template engines.
+Local CPU testing and development can be performed on Windows, macOS, or Linux without an NVIDIA GPU using the built-in mock and template engines.
 
-### Prerequisites
-- Python 3.10+
-- Node.js 18+ & npm
-- FFmpeg installed and available on `PATH`
+### 1. Prerequisites & Installation
+- Python >= 3.10
+- Node.js >= 18.x & npm
+- FFmpeg on system `PATH`
 
-### 1. Backend Setup
+From repository root:
 ```powershell
-# Navigate to backend and install in editable mode
-cd backend
-pip install -e ".[api,dev]"
+# Install backend package with API and dev dependencies
+python -m pip install -e "./backend[api,dev]"
 
-# Run database migrations
-alembic upgrade head
+# Initialize database schema
+python -m alembic -c backend/alembic.ini upgrade head
 
-# Start FastAPI backend
-uvicorn castle_qa.api.main:app --host 127.0.0.1 --port 8000 --reload
+# Install frontend dependencies
+cd frontend && npm install && cd ..
 ```
 
-### 2. Start Worker (Mock Mode for CPU)
+### 2. Start Backend & Mock Worker
 ```powershell
-cd backend
-python -m castle_qa.workers.entrypoint --poll-interval 2.0 --mock-models
+# In terminal 1 (FastAPI backend):
+python -m uvicorn castle_qa.api.main:create_app --factory --host 127.0.0.1 --port 8000
+
+# In terminal 2 (Mock Worker):
+python -m castle_qa.workers.entrypoint --mock
 ```
 
-### 3. Frontend Setup
+### 3. Start Frontend
 ```powershell
+# In terminal 3 (Vite Frontend):
 cd frontend
 npm install
 npm run dev
-# Accessible at http://localhost:3000
+# Open http://localhost:3000 in your browser
 ```
 
-### 4. Running Tests
+### 4. Run Pre-Flight Diagnostics
 ```powershell
-# Run the complete test suite (106 tests)
-cd backend
-pytest -v
+python -m castle_qa.deployment.readiness_check
 ```
 
 ---
 
-## 4. Production Deployment (Ubuntu + NVIDIA RTX 5090)
+## 4. Documentation Index
 
-The multi-container orchestration is defined in `compose.yaml`.
+Detailed engineering documentation is organized in the `docs/` directory:
 
-### 1. Build and Run
-```bash
-docker compose up --build -d
+- [docs/architecture.md](file:///d:/DCU-Internship/castle-question-generation/docs/architecture.md): Technical architecture, data flows, dual timestamp mapping, and storage lifecycles.
+- [docs/DEVELOPMENT.md](file:///d:/DCU-Internship/castle-question-generation/docs/DEVELOPMENT.md): Detailed local development guide, setup instructions, and troubleshooting.
+- [docs/LAB_GPU_DEPLOYMENT.md](file:///d:/DCU-Internship/castle-question-generation/docs/LAB_GPU_DEPLOYMENT.md): Step-by-step handover and deployment guide for the NVIDIA GPU lab PC.
+- [docs/TESTING.md](file:///d:/DCU-Internship/castle-question-generation/docs/TESTING.md): Comprehensive test suite guide (181 backend pytest tests, 74 frontend tests, 15 Playwright E2E tests).
+- [docs/API.md](file:///d:/DCU-Internship/castle-question-generation/docs/API.md): Authoritative REST API inventory based on OpenAPI route registration.
+- [docs/ANNOTATION_PROVENANCE.md](file:///d:/DCU-Internship/castle-question-generation/docs/ANNOTATION_PROVENANCE.md): Inference provenance (mock vs real), heuristic QA scores, and review statuses.
+
+---
+
+## 5. Running Tests
+
+```powershell
+# Backend Pytest Suite (181 tests)
+python -m pytest backend/tests -v
+
+# Frontend Unit & Component Tests (74 tests)
+npm --prefix frontend test
+
+# Browser End-to-End Tests (Playwright on Microsoft Edge - 15 tests)
+npm --prefix frontend run test:e2e
+
+# Production Frontend Build
+npm --prefix frontend run build
 ```
 
-### 2. Services Started
-- **`castle-qa-api`**: FastAPI backend listening on port `8000`.
-- **`castle-qa-worker`**: Qwen2.5-VL GPU worker with NVIDIA container runtime reservation (`nvidia.com/gpu: all`).
-- **`castle-qa-frontend`**: Nginx serving the compiled ReactJS application on port `3000` with reverse proxying to the backend.
-
 ---
 
-## 5. Configuration & Environment Variables
+## 6. Important Operational Limitations
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `CASTLE_JOB_DB_PATH` | `data/jobs/jobs.sqlite3` | SQLite path for inference job queue |
-| `CASTLE_ANALYSIS_DIR` | `data/analysis` | Directory storing structured `VideoAnalysis` JSON files |
-| `CASTLE_VIDEO_STORAGE_DIR` | `data/videos` | Storage location for ingested video files |
-| `CASTLE_CLIPS_DIR` | `data/clips` | Directory for extracted video subclips |
-| `CASTLE_REVIEWS_DIR` | `data/reviews` | Storage for human annotation review sessions |
-| `VIDEO_UNDERSTANDING_MODE` | `real` (or `mock`) | Toggle between Qwen2.5-VL GPU inference and mock service |
-| `VIDEO_MODEL_NAME` | `Qwen/Qwen2.5-VL-7B-Instruct` | Hugging Face model checkpoint for video understanding |
-| `VIDEO_FPS` | `2.0` | Sampling frame rate for video understanding |
-| `MAX_NEW_TOKENS` | `1024` | Maximum tokens generated during VLM inference |
-
----
-
-## 6. Whodunnit Annotation Adapter Notes
-
-As per system specifications, exact field schemas for the Whodunnit platform are decoupled using the `WhodunnitExportAdapter` (`src/services/whodunnit_export_adapter.py`). 
-
-The current configuration exports `whodunnit_v1_draft`:
-- **Events**: Start/end timestamps, actor labels, normalized actions, target objects, and verification metadata.
-- **QA Pairs**: Who questions, ground-truth actors, and automatically computed **candidate distractors** (all other distinct actors appearing in the scene).
-- **Formats**: Available as both structured JSON and tabular CSV.
+1. **Current Environment**: Development and verification are conducted on a Windows laptop without an NVIDIA CUDA GPU. Real Qwen2.5-VL inference is prepared for deployment on a dedicated lab PC (Task 8).
+2. **QA Confidence Scoring**: Confidence scores displayed in Grounded QA are **heuristic evidence-matching metrics**, not calibrated Bayesian probabilities of answer correctness.
+3. **Whodunnit Compatibility**: Exports use a research-compatible adapter with candidate distractor generation, not an officially certified schema.
+4. **Frame Sampling Baseline**: The system operates at a verified **1.0 FPS** baseline. Experimental 2.0 FPS sampling is supported via configuration (`VIDEO_FPS=2.0`).

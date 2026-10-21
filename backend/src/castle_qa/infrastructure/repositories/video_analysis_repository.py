@@ -2,9 +2,8 @@ import json
 import re
 from pathlib import Path
 
-from castle_qa.domain.video_analysis import (
-    VideoAnalysis
-)
+from castle_qa.domain.video_analysis import VideoAnalysis
+
 
 class VideoAnalysisRepository:
     def __init__(self, directory: Path):
@@ -35,27 +34,30 @@ class VideoAnalysisRepository:
             json.dump(
                 analysis.to_dict(),
                 file,
-                indent = 2,
-                ensure_ascii = False,
+                indent=2,
+                ensure_ascii=False,
             )
 
         return output_path
 
-    def list_ids(self) -> list[str]:
+    def list_ids(self, include_temporary: bool = False) -> list[str]:
         """
         List available analysis IDs.
+        By default, excludes temporary clip analyses (starting with 'clip_') to protect
+        user privacy and keep the global repository clean.
         """
-
         analysis_ids = []
 
         for path in self._directory.glob("*_analysis.json"):
-
             if not path.is_file() or path.is_symlink():
                 continue
 
             analysis_id = path.name.removesuffix(
                 "_analysis.json"
             )
+
+            if not include_temporary and analysis_id.startswith("clip_"):
+                continue
 
             if re.fullmatch(
                 r"[A-Za-z0-9][A-Za-z0-9._-]*",
@@ -72,7 +74,6 @@ class VideoAnalysisRepository:
         """
         Load a saved analysis by ID.
         """
-
         if not re.fullmatch(
              r"[A-Za-z0-9][A-Za-z0-9._-]*",
             analysis_id,

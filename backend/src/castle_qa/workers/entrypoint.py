@@ -152,59 +152,75 @@ def create_job_handler(
     analysis_repo: VideoAnalysisRepository,
     question_repo: QuestionRepository,
     mock_models: bool = False,
+    inference_mode: str | None = None,
 ) -> Callable[[InferenceJob], str]:
     """
     Factory creating a multi-task job execution handler.
+    Strictly distinguishes between 'real' and 'mock' inference modes.
+    Never silently falls back to mock if real mode is explicitly configured.
     """
-    force_mock = mock_models or os.getenv("VIDEO_UNDERSTANDING_MODE", "").lower() == "mock"
+    mode = (
+        "mock" if mock_models
+        else (inference_mode or os.getenv("VIDEO_UNDERSTANDING_MODE", "mock")).lower().strip()
+    )
 
-    if force_mock:
-        logger.info("Using mock engines for worker execution.")
+    if mode == "mock":
+        logger.info("Explicit mock inference mode configured (VIDEO_UNDERSTANDING_MODE=mock).")
         video_service = MockVideoUnderstandingService()
         question_generator = TemplateQuestionGenerator()
         generator_name = "template"
-    else:
+    elif mode == "real":
+        logger.info("Real inference mode requested (VIDEO_UNDERSTANDING_MODE=real). Verifying PyTorch and CUDA availability.")
         try:
             import torch
+        except ImportError as e:
+            raise RuntimeError(
+                "Real inference mode ('real') requested, but PyTorch is not installed. "
+                "Action: Install PyTorch with CUDA support, or configure VIDEO_UNDERSTANDING_MODE=mock for testing."
+            ) from e
 
-            if not torch.cuda.is_available():
-                logger.warning(
-                    "CUDA is not available. Falling back to mock engines."
-                )
-                video_service = MockVideoUnderstandingService()
-                question_generator = TemplateQuestionGenerator()
-                generator_name = "template"
-            else:
-                logger.info("Initializing Qwen GPU inference engines.")
-                from castle_qa.services.question_generation.qwen_local_question_generator import (
-                    QwenLocalQuestionGenerator,
-                )
-                from castle_qa.services.video_understanding.local_qwen_video_understanding_service import (
-                    LocalQwenVideoUnderstandingService,
-                )
+        try:
+            import transformers
+        except ImportError as e:
+            raise RuntimeError(
+                "Real inference mode ('real') requested, but Transformers is not installed. "
+                "Action: Install transformers and accelerate, or configure VIDEO_UNDERSTANDING_MODE=mock for testing."
+            ) from e
 
-                model_name = os.getenv(
-                    "VIDEO_MODEL_NAME",
-                    "Qwen/Qwen2.5-VL-7B-Instruct",
-                )
-                video_service = LocalQwenVideoUnderstandingService(
-                    model_name=model_name,
-                    fps=float(os.getenv("VIDEO_FPS", "2.0")),
-                    max_new_tokens=int(os.getenv("MAX_NEW_TOKENS", "1024")),
-                    prompt_path=Path("prompts/video_understanding.txt"),
-                )
-                question_generator = QwenLocalQuestionGenerator(
-                    model_name=model_name,
-                    prompt_path=Path("prompts/question_generation.txt"),
-                )
-                generator_name = "qwen_local"
-        except ImportError:
-            logger.warning(
-                "Torch or Transformers not installed. Using mock engines."
+        if not torch.cuda.is_available():
+            raise RuntimeError(
+                "Real inference mode ('real') requested, but CUDA is not available on this system. "
+                f"Detected environment: PyTorch {torch.__version__} (CPU-only / non-CUDA). "
+                "Action: Provision a dedicated NVIDIA GPU with CUDA support, or set VIDEO_UNDERSTANDING_MODE=mock for development/testing."
             )
-            video_service = MockVideoUnderstandingService()
-            question_generator = TemplateQuestionGenerator()
-            generator_name = "template"
+
+        logger.info("Initializing Qwen GPU inference engines.")
+        from castle_qa.services.question_generation.qwen_local_question_generator import (
+            QwenLocalQuestionGenerator,
+        )
+        from castle_qa.services.video_understanding.local_qwen_video_understanding_service import (
+            LocalQwenVideoUnderstandingService,
+        )
+
+        model_name = os.getenv(
+            "VIDEO_MODEL_NAME",
+            "Qwen/Qwen2.5-VL-7B-Instruct",
+        )
+        video_service = LocalQwenVideoUnderstandingService(
+            model_name=model_name,
+            fps=float(os.getenv("VIDEO_FPS", "2.0")),
+            max_new_tokens=int(os.getenv("MAX_NEW_TOKENS", "1024")),
+            prompt_path=Path("prompts/video_understanding.txt"),
+        )
+        question_generator = QwenLocalQuestionGenerator(
+            model_name=model_name,
+            prompt_path=Path("prompts/question_generation.txt"),
+        )
+        generator_name = "qwen_local"
+    else:
+        raise ValueError(
+            f"Unsupported VIDEO_UNDERSTANDING_MODE: '{mode}'. Valid modes are 'real' and 'mock'."
+        )
 
     video_workflow = VideoUnderstandingWorkflow(
         service=video_service,
@@ -262,6 +278,7 @@ def run_worker(
     once: bool,
     worker_id: str | None = None,
     database_path: Path | None = None,
+    inference_mode: str | None = None,
 ) -> None:
     """
     Run worker against the live job database.

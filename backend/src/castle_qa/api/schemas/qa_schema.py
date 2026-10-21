@@ -37,6 +37,8 @@ class VideoQAResponse(BaseModel):
     question: str
     answer: str
     confidence: float
+    confidence_type: str = "heuristic_score"
+    is_human_reviewed: bool = False
     is_observable: bool
     uncertainty_notes: str | None = None
     start_seconds: float | None = None
@@ -46,4 +48,6 @@ class VideoQAResponse(BaseModel):
     video_id: str | None = None
     analysis_id: str | None = None
     clip_url: str | None = None
+    is_mock: bool = False
+    mock_notice: str | None = None
 

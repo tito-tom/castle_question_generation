@@ -138,3 +138,22 @@ class QuestionRepository:
             )
 
         return data
+    def make_persistent(
+        self,
+        generation_id: str,
+    ) -> dict | None:
+        """
+        Mark a question-generation result as persistent so it survives cleanup.
+        """
+        self._validate_generation_id(generation_id)
+        input_path = self._output_directory / f"{generation_id}_questions.json"
+        if input_path.is_symlink() or not input_path.is_file():
+            return None
+        with input_path.open("r", encoding="utf-8") as file:
+            data = json.load(file)
+        data["is_persistent"] = True
+        temp_path = self._output_directory / f".tmp_{generation_id}.json"
+        with temp_path.open("w", encoding="utf-8") as file:
+            json.dump(data, file, indent=2, ensure_ascii=False)
+        temp_path.replace(input_path)
+        return data

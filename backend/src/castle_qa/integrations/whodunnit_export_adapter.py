@@ -50,6 +50,9 @@ class WhodunnitExportAdapter:
         Export reviewed items into Whodunnit JSON package.
         """
         participants = all_participants or []
+        is_mock_session = getattr(session, "is_mock", False)
+        inference_mode_session = getattr(session, "inference_mode", "mock" if is_mock_session else "legacy_unverified")
+        is_real_inference = (inference_mode_session == "real") and (not is_mock_session)
 
         # Export observable events
         annotated_events = []
@@ -68,7 +71,16 @@ class WhodunnitExportAdapter:
                 "object": event.edited_object or event.original_object,
                 "target": event.edited_target or event.original_target,
                 "review_status": event.status.value,
-                "human_verified": event.status in (ReviewStatus.ACCEPTED, ReviewStatus.EDITED),
+                "is_mock": is_mock_session,
+                "human_verified": is_real_inference and (event.status in (ReviewStatus.ACCEPTED, ReviewStatus.EDITED)),
+                "annotation_source": (
+                    "human_verified" if (is_real_inference and (event.status in (ReviewStatus.ACCEPTED, ReviewStatus.EDITED)))
+                    else "model_generated_candidate" if is_real_inference
+                    else "mock_test_data_human_reviewed" if ((is_mock_session or inference_mode_session == "mock") and (event.status in (ReviewStatus.ACCEPTED, ReviewStatus.EDITED)))
+                    else "mock_test_data" if (is_mock_session or inference_mode_session == "mock")
+                    else "legacy_unverified_human_reviewed" if (event.status in (ReviewStatus.ACCEPTED, ReviewStatus.EDITED))
+                    else "legacy_unverified"
+                ),
                 "reviewer_notes": event.reviewer_notes,
             })
 
@@ -82,6 +94,15 @@ class WhodunnitExportAdapter:
             # Generate distractor options from other participants in scene
             distractors = [p for p in participants if p != gt_actor]
 
+            is_verified = is_real_inference and (q.status in (ReviewStatus.ACCEPTED, ReviewStatus.EDITED))
+            q_source = (
+                "human_verified" if is_verified
+                else "model_generated_candidate" if is_real_inference
+                else "mock_test_data_human_reviewed" if ((is_mock_session or inference_mode_session == "mock") and (q.status in (ReviewStatus.ACCEPTED, ReviewStatus.EDITED)))
+                else "mock_test_data" if (is_mock_session or inference_mode_session == "mock")
+                else "legacy_unverified_human_reviewed" if (q.status in (ReviewStatus.ACCEPTED, ReviewStatus.EDITED))
+                else "legacy_unverified"
+            )
             qa_records.append({
                 "qa_id": f"qa_{q.question_index}_{uuid4().hex[:8]}",
                 "question": q.get_effective_question(),
@@ -93,7 +114,9 @@ class WhodunnitExportAdapter:
                     "end_seconds": q.evidence_end_seconds,
                 },
                 "review_status": q.status.value,
-                "human_verified": q.status in (ReviewStatus.ACCEPTED, ReviewStatus.EDITED),
+                "is_mock": is_mock_session,
+                "human_verified": is_verified,
+                "annotation_source": q_source,
                 "reviewer_notes": q.reviewer_notes,
             })
 
@@ -104,6 +127,13 @@ class WhodunnitExportAdapter:
                 "specification_status": self._config.specification_status,
                 "task_type": self._config.task_type,
                 "exported_at": session.updated_at,
+                "is_mock": is_mock_session,
+                "inference_mode": inference_mode_session,
+                "mock_notice": (
+                    "MOCK / TEST DATA — NOT REAL VIDEO ANALYSIS" if (is_mock_session or inference_mode_session == "mock")
+                    else "LEGACY / UNVERIFIED — HISTORICAL PROVENANCE UNCONFIRMED" if inference_mode_session in ("legacy_unverified", "unknown")
+                    else None
+                ),
             },
             "session": {
                 "review_id": session.review_id,
@@ -143,6 +173,8 @@ class WhodunnitExportAdapter:
             "item_type",
             "index",
             "status",
+            "human_verified",
+            "annotation_source",
             "description_or_question",
             "actor_or_answer",
             "start_seconds",
@@ -151,15 +183,29 @@ class WhodunnitExportAdapter:
         ]
         writer.writerow(headers)
 
+        is_mock_session = getattr(session, "is_mock", False)
+        inference_mode_session = getattr(session, "inference_mode", "mock" if is_mock_session else "legacy_unverified")
+        is_real_inference = (inference_mode_session == "real") and (not is_mock_session)
+
         for e in session.events:
             if not self._config.include_rejected and e.status == ReviewStatus.REJECTED:
                 continue
+            is_e_verified = is_real_inference and (e.status in (ReviewStatus.ACCEPTED, ReviewStatus.EDITED))
+            if is_real_inference:
+                e_source = "human_verified" if is_e_verified else "model_generated_candidate"
+            elif is_mock_session or inference_mode_session == "mock":
+                e_source = "mock_test_data_human_reviewed" if (e.status in (ReviewStatus.ACCEPTED, ReviewStatus.EDITED)) else "mock_test_data"
+            else:
+                e_source = "legacy_unverified_human_reviewed" if (e.status in (ReviewStatus.ACCEPTED, ReviewStatus.EDITED)) else "legacy_unverified"
+
             writer.writerow([
                 session.review_id,
                 session.video_id or "",
                 "event",
                 e.event_index,
                 e.status.value,
+                str(is_e_verified),
+                e_source,
                 e.get_effective_description(),
                 e.get_effective_actor() or "",
                 f"{e.get_effective_start():.2f}",
@@ -180,12 +226,22 @@ class WhodunnitExportAdapter:
                 if q.evidence_end_seconds is not None
                 else ""
             )
+            is_q_verified = is_real_inference and (q.status in (ReviewStatus.ACCEPTED, ReviewStatus.EDITED))
+            if is_real_inference:
+                q_source = "human_verified" if is_q_verified else "model_generated_candidate"
+            elif is_mock_session or inference_mode_session == "mock":
+                q_source = "mock_test_data_human_reviewed" if (q.status in (ReviewStatus.ACCEPTED, ReviewStatus.EDITED)) else "mock_test_data"
+            else:
+                q_source = "legacy_unverified_human_reviewed" if (q.status in (ReviewStatus.ACCEPTED, ReviewStatus.EDITED)) else "legacy_unverified"
+
             writer.writerow([
                 session.review_id,
                 session.video_id or "",
                 "question",
                 q.question_index,
                 q.status.value,
+                str(is_q_verified),
+                q_source,
                 q.get_effective_question(),
                 q.get_effective_answer() or q.actor_reference or "",
                 start_str,

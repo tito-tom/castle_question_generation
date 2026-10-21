@@ -1,9 +1,13 @@
+from castle_qa.services.video_service import VideoService
+from castle_qa.api.routers.videos import get_video_service
 from castle_qa.config.api_settings import APISettings
 
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import (
+    Header,
+    Query,
     APIRouter,
     Depends,
     HTTPException,
@@ -139,6 +143,7 @@ def generate_question(
         analysis_id=result.analysis_id,
         generator=request.generator,
         question_count=len(questions),
+        is_persistent=False,
         questions=questions,
     )
 
@@ -220,6 +225,49 @@ def get_saved_generation(
         analysis_id=saved["analysis_id"],
         generator=generator_name,
         question_count=len(questions),
+        is_persistent=bool(saved.get("is_persistent", False)),
         questions=questions,
     )
 
+
+
+@router.post(
+    "/{generation_id}/save-persistent",
+    response_model=QuestionGenerationResponse,
+    summary="Mark question generation persistent",
+)
+def save_question_generation_persistent(
+    generation_id: Annotated[
+        str,
+        PathParameter(
+            pattern=r"^gen_[0-9a-f]{32}$",
+        ),
+    ],
+    workflow: Annotated[
+        QuestionWorkflow,
+        Depends(get_question_workflow),
+    ],
+    video_service: Annotated[
+        VideoService,
+        Depends(get_video_service),
+    ],
+    x_session_token: Annotated[str | None, Header(description="Session authorization token header")] = None,
+    token: Annotated[str | None, Query(description="Session authorization token query")] = None,
+) -> QuestionGenerationResponse:
+    effective_token = x_session_token or token
+    if hasattr(video_service, "session_service"):
+        s = video_service.session_service.find_session_for_question(generation_id)
+        if s and (not effective_token or not video_service.session_service.validate_token(s.session_id, effective_token)):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Unauthorized access to temporary question generation '{generation_id}'",
+            )
+        video_service.session_service.make_persistent(question_id=generation_id)
+
+    saved = workflow.make_persistent(generation_id)
+    if saved is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Generation not found",
+        )
+    return get_saved_generation(generation_id=generation_id, workflow=workflow)

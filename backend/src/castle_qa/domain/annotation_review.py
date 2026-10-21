@@ -177,8 +177,19 @@ class AnnotationReviewSession:
     reviewer_id: str | None = None
     overall_status: SessionStatus = SessionStatus.IN_PROGRESS
     summary: str = ""
+    is_persistent: bool = False
+    is_mock: bool = False
+    inference_mode: str = "real"
     events: list[EventReviewItem] = field(default_factory=list)
     questions: list[QuestionReviewItem] = field(default_factory=list)
+
+    @property
+    def mock_notice(self) -> str | None:
+        if self.is_mock or self.inference_mode == "mock":
+            return "MOCK / TEST DATA — NOT REAL VIDEO ANALYSIS"
+        if self.inference_mode in ("legacy_unverified", "unknown"):
+            return "LEGACY / UNVERIFIED — HISTORICAL PROVENANCE UNCONFIRMED"
+        return None
 
     @classmethod
     def create(
@@ -190,6 +201,9 @@ class AnnotationReviewSession:
         events: list[EventReviewItem] | None = None,
         questions: list[QuestionReviewItem] | None = None,
         reviewer_id: str | None = None,
+        is_persistent: bool = False,
+        is_mock: bool = False,
+        inference_mode: str = "real",
     ) -> "AnnotationReviewSession":
         now = datetime.now(timezone.utc).isoformat()
         return cls(
@@ -202,6 +216,9 @@ class AnnotationReviewSession:
             reviewer_id=reviewer_id,
             overall_status=SessionStatus.IN_PROGRESS,
             summary=summary,
+            is_persistent=is_persistent,
+            is_mock=is_mock,
+            inference_mode=inference_mode,
             events=events or [],
             questions=questions or [],
         )
@@ -217,6 +234,9 @@ class AnnotationReviewSession:
             "reviewer_id": self.reviewer_id,
             "overall_status": self.overall_status.value,
             "summary": self.summary,
+            "is_persistent": self.is_persistent,
+            "is_mock": self.is_mock,
+            "inference_mode": self.inference_mode,
             "events": [event.to_dict() for event in self.events],
             "questions": [q.to_dict() for q in self.questions],
         }
@@ -235,6 +255,9 @@ class AnnotationReviewSession:
                 data.get("overall_status", SessionStatus.IN_PROGRESS.value)
             ),
             summary=data.get("summary", ""),
+            is_persistent=bool(data.get("is_persistent", False)),
+            is_mock=bool(data.get("is_mock", False)),
+            inference_mode=str(data.get("inference_mode", "mock" if data.get("is_mock") else "legacy_unverified" if "inference_mode" not in data else "real")),
             events=[EventReviewItem.from_dict(e) for e in data.get("events", [])],
             questions=[QuestionReviewItem.from_dict(q) for q in data.get("questions", [])],
         )

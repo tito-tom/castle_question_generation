@@ -135,3 +135,13 @@ class QuestionWorkflow:
         return self._question_repository.load(
             generation_id
         )
+    def make_persistent(
+        self,
+        generation_id: str,
+    ) -> dict | None:
+        """
+        Mark a question-generation result persistent.
+        """
+        return self._question_repository.make_persistent(
+            generation_id
+        )

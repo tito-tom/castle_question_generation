@@ -1,7 +1,10 @@
 import json
+import logging
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -31,7 +34,7 @@ class VideoProbe:
         command = [
             "ffprobe",
             "-v",
-            "quiet",
+            "error",
             "-print_format",
             "json",
             "-show_format",
@@ -55,9 +58,11 @@ class VideoProbe:
             height = None
             fps = None
             codec_name = None
+            has_video_stream = False
 
             for stream in data.get("streams", []):
                 if stream.get("codec_type") == "video":
+                    has_video_stream = True
                     width = int(stream.get("width")) if stream.get("width") else None
                     height = int(stream.get("height")) if stream.get("height") else None
                     codec_name = stream.get("codec_name")
@@ -68,6 +73,9 @@ class VideoProbe:
                             fps = round(float(parts[0]) / float(parts[1]), 2)
                     break
 
+            if not has_video_stream and duration <= 0.0:
+                raise ValueError(f"No valid video stream found in: {video_path}")
+
             return VideoProbeMetadata(
                 duration_seconds=duration,
                 width=width,
@@ -76,8 +84,13 @@ class VideoProbe:
                 codec_name=codec_name,
                 size_bytes=size_bytes,
             )
-        except (subprocess.CalledProcessError, FileNotFoundError, json.JSONDecodeError, KeyError) as e:
-            # Fallback when ffprobe binary is not installed in the current environment
+        except subprocess.CalledProcessError as e:
+            raise ValueError(f"Corrupted or invalid video file: {video_path}") from e
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Failed to parse video probe output for: {video_path}") from e
+        except FileNotFoundError as e:
+            # Fallback ONLY when ffprobe binary is not installed in the current environment
+            logger.warning("ffprobe not found in PATH; falling back to basic file stat for %s", video_path)
             size = video_path.stat().st_size if video_path.exists() else 0
             if size == 0:
                 raise ValueError(f"Empty or corrupted video file: {video_path}") from e

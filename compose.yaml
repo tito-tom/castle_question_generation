@@ -21,13 +21,15 @@ services:
       CASTLE_QUESTION_DIR: /app/data/questions/api_template
       CASTLE_JOB_DB_PATH: /app/data/jobs/jobs.sqlite3
       CASTLE_VIDEO_STORAGE_DIR: /app/data/videos
+      CASTLE_VIDEO_DIR: /app/data/videos
       CASTLE_CLIPS_DIR: /app/data/clips
+      CASTLE_TEMP_CLIPS_DIR: /app/data/clips/temp_uploads
       CASTLE_REVIEWS_DIR: /app/data/reviews
     volumes:
       - ./data/analysis:/app/data/analysis
       - ./data/questions:/app/data/questions
       - ./data/jobs:/app/data/jobs
-      - ./data/videos:/app/data/videos
+      - ./data/videos:/app/data/videos:ro
       - ./data/clips:/app/data/clips
       - ./data/reviews:/app/data/reviews
     restart: unless-stopped
@@ -44,9 +46,11 @@ services:
       CASTLE_QUESTION_DIR: /app/data/questions/api_template
       CASTLE_JOB_DB_PATH: /app/data/jobs/jobs.sqlite3
       CASTLE_VIDEO_STORAGE_DIR: /app/data/videos
+      CASTLE_VIDEO_DIR: /app/data/videos
       CASTLE_CLIPS_DIR: /app/data/clips
+      CASTLE_TEMP_CLIPS_DIR: /app/data/clips/temp_uploads
       CASTLE_REVIEWS_DIR: /app/data/reviews
-      VIDEO_UNDERSTANDING_MODE: ${VIDEO_UNDERSTANDING_MODE:-real}
+      VIDEO_UNDERSTANDING_MODE: ${VIDEO_UNDERSTANDING_MODE:-mock}
       VIDEO_MODEL_NAME: ${VIDEO_MODEL_NAME:-Qwen/Qwen2.5-VL-7B-Instruct}
       VIDEO_FPS: ${VIDEO_FPS:-2.0}
       MAX_NEW_TOKENS: ${MAX_NEW_TOKENS:-1024}
@@ -54,16 +58,9 @@ services:
       - ./data/analysis:/app/data/analysis
       - ./data/questions:/app/data/questions
       - ./data/jobs:/app/data/jobs
-      - ./data/videos:/app/data/videos
+      - ./data/videos:/app/data/videos:ro
       - ./data/clips:/app/data/clips
       - ./data/reviews:/app/data/reviews
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
     depends_on:
       - api
     restart: unless-stopped

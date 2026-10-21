@@ -3,8 +3,10 @@ from typing import Annotated
 from fastapi import (
     APIRouter,
     Depends,
+    Header,
     HTTPException,
     Path as PathParameter,
+    Query,
     status,
 )
 
@@ -34,6 +36,7 @@ from castle_qa.services.video_service import (
 from castle_qa.domain.inference_job import (
     InferenceJob,
     JobStatus,
+    JobType,
 )
 
 from castle_qa.infrastructure.repositories.job_repository import (
@@ -54,6 +57,12 @@ def get_job_repository() -> JobRepository:
     return JobRepository()
 
 
+@router.post(
+    "/question-generation",
+    response_model=JobSubmissionResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    include_in_schema=False,
+)
 @router.post(
     "/question-generations",
     response_model=JobSubmissionResponse,
@@ -105,6 +114,12 @@ def submit_question_generation_job(
 
 
 @router.post(
+    "/video-understanding",
+    response_model=JobSubmissionResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    include_in_schema=False,
+)
+@router.post(
     "/video-understandings",
     response_model=JobSubmissionResponse,
     status_code=status.HTTP_202_ACCEPTED,
@@ -119,6 +134,8 @@ def submit_video_understanding_job(
         VideoService,
         Depends(get_video_service),
     ],
+    x_session_token: Annotated[str | None, Header(description="Session authorization token header")] = None,
+    token: Annotated[str | None, Query(description="Session authorization token query")] = None,
 ) -> JobSubmissionResponse:
     """
     Submit a video-understanding job.
@@ -133,6 +150,21 @@ def submit_video_understanding_job(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Video not found",
         )
+
+    if video.is_temporary and video.session_id:
+        effective_token = x_session_token or token
+        if effective_token and not video_service.session_service.validate_token(video.session_id, effective_token):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Unauthorized: valid session token required to submit job for temporary video '{request.video_id}'",
+            )
+        session = video_service.session_service.get_session(video.session_id)
+        if session and session.state != "active":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Cannot submit job: session '{video.session_id}' is {session.state}.",
+            )
+        video_service.session_service.record_activity(video.session_id, action="submit_video_understanding")
 
     job = InferenceJob.new_video_understanding(
         video_id=request.video_id,
@@ -162,9 +194,16 @@ def get_job_status(
         JobRepository,
         Depends(get_job_repository),
     ],
+    video_service: Annotated[
+        VideoService,
+        Depends(get_video_service),
+    ],
+    x_session_token: Annotated[str | None, Header(description="Session authorization token header")] = None,
+    token: Annotated[str | None, Query(description="Session authorization token query")] = None,
 ) -> JobStatusResponse:
     """
     Retrieve the current state of an inference job.
+    For temporary clip inference jobs, enforces session authorization.
     """
 
     # Step 1: Retrieve the job from SQLite.
@@ -189,6 +228,25 @@ def get_job_status(
         else None
     )
 
+    is_temporary_job = (video_id and video_id.startswith("clip_")) or (analysis_id and analysis_id.startswith("clip_"))
+    if is_temporary_job:
+        effective_token = x_session_token or token
+        session_id = None
+        if video_id and video_id.startswith("clip_"):
+            v = video_service.get_video(video_id)
+            if v and v.session_id:
+                session_id = v.session_id
+        if not session_id and analysis_id:
+            s = video_service.session_service.find_session_for_analysis(analysis_id)
+            if s:
+                session_id = s.session_id
+
+        if session_id and effective_token and not video_service.session_service.validate_token(session_id, effective_token):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Unauthorized access to temporary inference job '{job_id}'",
+            )
+
     return JobStatusResponse(
         job_id=job.job_id,
         job_type=job.job_type,
@@ -201,6 +259,3 @@ def get_job_status(
         result_id=job.result_id,
         error_message=job.error_message,
     )
-
-
-
