@@ -29,11 +29,21 @@ class InferenceJobWorker:
         generate_and_save: Callable[[InferenceJob], str],
         worker_id: str | None = None,
         heartbeat_interval_seconds: float = 5.0,
+        on_terminal: Callable[[InferenceJob], None] | None = None,
     ):
         self._repository = repository
         self._generate_and_save = generate_and_save
         self._worker_id = worker_id or f"worker_{uuid4().hex[:12]}"
         self._heartbeat_interval_seconds = heartbeat_interval_seconds
+        self._on_terminal = on_terminal
+
+    def finalize_terminal(self, job: InferenceJob) -> None:
+        if self._on_terminal is None:
+            return
+        try:
+            self._on_terminal(job)
+        except Exception:
+            logger.exception("Terminal cleanup failed for job %s", job.job_id)
 
     @property
     def worker_id(self) -> str:
@@ -125,11 +135,25 @@ class InferenceJobWorker:
                     "Could not record job failure: claim ownership lost"
                 )
 
-            return self._get_updated_job(job.job_id)
+            failed_job = self._get_updated_job(job.job_id)
+            self.finalize_terminal(failed_job)
+            return failed_job
         finally:
             stop_heartbeat.set()
             if heartbeat_thread.is_alive():
                 heartbeat_thread.join(timeout=1.0)
+
+        if self._repository.is_cancel_requested(job.job_id):
+            updated = self._repository.mark_failed(
+                job.job_id,
+                "Inference job cancelled after active processing stopped",
+                claim_token=job.claim_token,
+            )
+            if not updated:
+                raise RuntimeError("Could not record cancellation: claim ownership lost")
+            cancelled_job = self._get_updated_job(job.job_id)
+            self.finalize_terminal(cancelled_job)
+            return cancelled_job
 
         # step 3: Mark successful processing complete with claim ownership check.
         updated = self._repository.mark_completed(
@@ -139,16 +163,25 @@ class InferenceJobWorker:
         )
 
         if not updated:
-            raise RuntimeError(
-                "Could not mark job as completed: claim ownership lost"
-            )
+            if self._repository.is_cancel_requested(job.job_id):
+                self._repository.mark_failed(
+                    job.job_id,
+                    "Inference job cancelled after active processing stopped",
+                    claim_token=job.claim_token,
+                )
+                cancelled_job = self._get_updated_job(job.job_id)
+                self.finalize_terminal(cancelled_job)
+                return cancelled_job
+            raise RuntimeError("Could not mark job as completed: claim ownership lost")
 
         logger.info(
             "Completed inference job: %s",
             job.job_id,
         )
 
-        return self._get_updated_job(job.job_id)
+        completed_job = self._get_updated_job(job.job_id)
+        self.finalize_terminal(completed_job)
+        return completed_job
 
     def _get_updated_job(
         self,

@@ -60,6 +60,8 @@ export interface StagedClipItem {
   sourceEndSeconds: number;
   sourceDurationSeconds: number;
   durationDeltaSeconds: number;
+  captureWallClockSeconds?: number;
+  capturePlaybackRate?: number;
   notes?: string;
   createdAt: string;
 }
@@ -108,6 +110,29 @@ export interface InferenceJob {
   finished_at?: string | null;
 }
 
+export interface GeneratedQuestion {
+  question: string;
+  answer: string | null;
+  actor_reference: string;
+  source_event_index: number;
+  evidence: {
+    clip_name: string;
+    start_seconds: number;
+    end_seconds: number;
+  };
+  generation_method: string;
+  review_status: string;
+}
+
+export interface QuestionGenerationResponse {
+  generation_id: string | null;
+  analysis_id: string;
+  generator: string;
+  question_count: number;
+  is_persistent: boolean;
+  questions: GeneratedQuestion[];
+}
+
 export interface ObservableEvent {
   start_seconds: number;
   end_seconds: number;
@@ -123,6 +148,7 @@ export interface ObservableEvent {
   object_name?: string | null;
   target?: string | null;
   confidence?: number | null;
+  evidence_provenance?: Array<Record<string, unknown>> | null;
 }
 
 export interface VideoAnalysis {
@@ -147,6 +173,7 @@ export interface VideoAnalysis {
   runtime_seconds?: number | null;
   device?: string | null;
   mock_notice?: string | null;
+  window_analysis_ids?: string[] | null;
 }
 
 export interface VideoQAAnswer {

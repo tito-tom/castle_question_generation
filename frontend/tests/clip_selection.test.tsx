@@ -178,8 +178,8 @@ describe('Task 2: Interactive Video Timestamp Selection & Preview Tests', () => 
     expect(screen.getByText('Selected Interval: 30.0s')).toBeInTheDocument();
   });
 
-  // 5. Intervals in videos longer than one hour
-  it('3. Handles intervals in videos longer than one hour (> 3600 seconds)', () => {
+  // 5. High source timestamps remain valid while each analysis interval stays under ten minutes
+  it('3. Handles a short interval after one hour and rejects intervals longer than ten minutes', () => {
     const onAddSelection = vi.fn();
 
     render(
@@ -203,9 +203,9 @@ describe('Task 2: Interactive Video Timestamp Selection & Preview Tests', () => 
     const labelInput = screen.getByTestId('selection-label-input');
     const addBtn = screen.getByTestId('add-selection-btn');
 
-    // Interval: 01:15:30.500 (4530.5s) to 01:25:45.000 (5145s)
+    // Valid interval: 01:15:30.500 (4530.5s) to 01:25:00.000 (5100s)
     fireEvent.change(startInput, { target: { value: '01:15:30.500' } });
-    fireEvent.change(endInput, { target: { value: '01:25:45.000' } });
+    fireEvent.change(endInput, { target: { value: '01:25:00.000' } });
     fireEvent.change(labelInput, { target: { value: 'Suspect exits warehouse' } });
 
     fireEvent.click(addBtn);
@@ -213,9 +213,14 @@ describe('Task 2: Interactive Video Timestamp Selection & Preview Tests', () => 
     expect(onAddSelection).toHaveBeenCalledTimes(1);
     const addedSelection: VideoIntervalSelection = onAddSelection.mock.calls[0][0];
     expect(addedSelection.startSeconds).toBe(4530.5);
-    expect(addedSelection.endSeconds).toBe(5145);
-    expect(addedSelection.durationSeconds).toBe(614.5);
+    expect(addedSelection.endSeconds).toBe(5100);
+    expect(addedSelection.durationSeconds).toBe(569.5);
     expect(addedSelection.label).toBe('Suspect exits warehouse');
+
+    fireEvent.change(endInput, { target: { value: '01:25:45.000' } });
+    fireEvent.click(addBtn);
+    expect(onAddSelection).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/exceeds the maximum allowed duration of 600s/)).toBeInTheDocument();
   });
 
   // 6. Invalid interval validation messages

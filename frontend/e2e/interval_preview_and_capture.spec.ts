@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import path from 'path';
 import fs from 'fs';
+import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -144,6 +145,66 @@ test.describe('CASTLE QA Studio — Interval Preview and Mode C Browser Capture'
     // Verify StagedClipCard appears
     const stagedCard = page.locator('[data-testid="staged-clip-video-player"]');
     await expect(stagedCard).toBeVisible({ timeout: 5000 });
+
+    // Verify the staged Blob still decodes after the extraction modal has closed.
+    const stagedMedia = await stagedCard.evaluate(async (v: HTMLVideoElement) => {
+      await new Promise<void>((resolve, reject) => {
+        if (v.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) return resolve();
+        const timer = setTimeout(() => reject(new Error('staged media did not decode')), 10000);
+        v.addEventListener('loadeddata', () => { clearTimeout(timer); resolve(); }, { once: true });
+        v.addEventListener('error', () => { clearTimeout(timer); reject(new Error('staged media decode failed')); }, { once: true });
+      });
+      const metadata = { duration: v.duration, width: v.videoWidth, height: v.videoHeight, src: v.currentSrc, playbackRate: v.playbackRate };
+      await v.play();
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      v.pause();
+      const advanced = v.currentTime > 0;
+      const target = Math.min(0.2, v.duration / 2);
+      const seeked = new Promise<void>((resolve) => v.addEventListener('seeked', () => resolve(), { once: true }));
+      v.currentTime = target;
+      await seeked;
+      return { ...metadata, advanced, seekSucceeded: Math.abs(v.currentTime - target) < 0.1 };
+    });
+    expect(stagedMedia.duration).toBeGreaterThan(0);
+    expect(stagedMedia.width).toBeGreaterThan(0);
+    expect(stagedMedia.height).toBeGreaterThan(0);
+    expect(stagedMedia.src.startsWith('blob:')).toBeTruthy();
+    expect(stagedMedia.playbackRate).toBe(1);
+    expect(stagedMedia.advanced).toBeTruthy();
+    expect(stagedMedia.seekSucceeded).toBeTruthy();
+
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.locator('[data-testid="download-staged-clip-btn"]').click(),
+    ]);
+    expect(download.suggestedFilename()).toMatch(/\.(webm|mp4)$/);
+    expect(download.suggestedFilename().endsWith('.mp4')).toBeTruthy();
+    const downloadedPath = await download.path();
+    expect(downloadedPath).toBeTruthy();
+    expect(fs.statSync(downloadedPath!).size).toBeGreaterThan(0);
+    const savedPath = path.join(__dirname, '../test-results', download.suggestedFilename());
+    fs.mkdirSync(path.dirname(savedPath), { recursive: true });
+    await download.saveAs(savedPath);
+    const mountPath = path.dirname(savedPath).replaceAll('\\', '/');
+    const savedName = path.basename(savedPath);
+    const probe = JSON.parse(execFileSync('docker', [
+      'run', '--rm', '-v', `${mountPath}:/validation:ro`, 'castle-qa-api:latest',
+      'ffprobe', '-v', 'error', '-show_entries',
+      'format=format_name,duration:stream=codec_type,codec_name,width,height,avg_frame_rate',
+      '-of', 'json', `/validation/${savedName}`,
+    ], { encoding: 'utf8' }));
+    const videoStream = probe.streams.find((stream: any) => stream.codec_type === 'video');
+    expect(videoStream).toBeTruthy();
+    expect(videoStream.codec_name).toBeTruthy();
+    expect(videoStream.width).toBeGreaterThan(0);
+    expect(videoStream.height).toBeGreaterThan(0);
+    const [fpsNumerator, fpsDenominator] = videoStream.avg_frame_rate.split('/').map(Number);
+    expect(fpsNumerator / fpsDenominator).toBeGreaterThan(0);
+    expect(Number(probe.format.duration)).toBeGreaterThan(0);
+    execFileSync('docker', [
+      'run', '--rm', '-v', `${mountPath}:/validation:ro`, 'castle-qa-api:latest',
+      'ffmpeg', '-v', 'error', '-i', `/validation/${savedName}`, '-f', 'null', '-',
+    ], { stdio: 'pipe' });
 
     // Verify browser_capture method badge and approximate alignment badge
     await expect(page.getByText('Browser Capture (Experimental)')).toBeVisible();

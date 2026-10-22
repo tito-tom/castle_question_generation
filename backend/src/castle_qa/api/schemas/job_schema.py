@@ -39,6 +39,12 @@ class QuestionGenerationJobRequest(BaseModel):
         le=20,
     )
 
+    criteria_text: str = Field(
+        default="",
+        max_length=16_384,
+        description="Optional, untrusted question style and selection guidance.",
+    )
+
 
 class VideoUnderstandingJobRequest(BaseModel):
     """

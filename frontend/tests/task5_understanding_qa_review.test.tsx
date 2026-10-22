@@ -177,7 +177,7 @@ describe('Task 5: Video Understanding, QA, Review and Export Test Suite', () => 
       });
     });
 
-    it('copies formatted events list to clipboard on click', async () => {
+    it('copies only one event description to clipboard', async () => {
       render(
         <TimelineView
           analysis={sampleAnalysis}
@@ -186,17 +186,14 @@ describe('Task 5: Video Understanding, QA, Review and Export Test Suite', () => 
         />
       );
 
-      const copyEventsBtn = screen.getByTestId('copy-events-btn');
-      fireEvent.click(copyEventsBtn);
+      fireEvent.click(screen.getByTestId('copy-event-0'));
 
-      expect(navigator.clipboard.writeText).toHaveBeenCalled();
-      const calledText = vi.mocked(navigator.clipboard.writeText).mock.calls[0][0];
-      expect(calledText).toContain('[Event 1]');
-      expect(calledText).toContain('Person 1 picks up a white ceramic cup');
-      expect(calledText).toContain('Actor: person_1');
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+        'Person 1 picks up a white ceramic cup from the counter.'
+      );
     });
 
-    it('copies full analysis JSON and triggers JSON download', async () => {
+    it('does not show bulk event or JSON export controls', () => {
       render(
         <TimelineView
           analysis={sampleAnalysis}
@@ -205,17 +202,9 @@ describe('Task 5: Video Understanding, QA, Review and Export Test Suite', () => 
         />
       );
 
-      // Copy JSON
-      const copyJsonBtn = screen.getByTestId('copy-analysis-json-btn');
-      fireEvent.click(copyJsonBtn);
-      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-        JSON.stringify(sampleAnalysis, null, 2)
-      );
-
-      // Download JSON
-      const downloadBtn = screen.getByTestId('download-analysis-json-btn');
-      fireEvent.click(downloadBtn);
-      expect(global.URL.createObjectURL).toHaveBeenCalled();
+      expect(screen.queryByTestId('copy-events-btn')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('copy-analysis-json-btn')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('download-analysis-json-btn')).not.toBeInTheDocument();
     });
 
     it('allows explicit saving to persistent storage for temporary analyses', async () => {

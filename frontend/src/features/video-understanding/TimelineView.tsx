@@ -9,13 +9,11 @@ import {
   AlertTriangle,
   Copy,
   Check,
-  Download,
   Bookmark,
   BookmarkCheck,
   FileText,
-  Code,
 } from 'lucide-react';
-import { ObservableEvent, VideoAnalysis } from '../../shared/types';
+import { VideoAnalysis } from '../../shared/types';
 import { api } from '../../shared/api/client';
 
 interface TimelineViewProps {
@@ -35,7 +33,8 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
   isAnalyzing,
   onAnalysisUpdated,
 }) => {
-  const [copiedType, setCopiedType] = useState<'summary' | 'events' | 'json' | null>(null);
+  const [summaryCopied, setSummaryCopied] = useState(false);
+  const [copiedEventIndex, setCopiedEventIndex] = useState<number | null>(null);
   const [isSavingPersistent, setIsSavingPersistent] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -46,62 +45,25 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ms}`;
   };
 
-  const handleCopy = (type: 'summary' | 'events' | 'json', text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedType(type);
-    setTimeout(() => {
-      setCopiedType((prev) => (prev === type ? null : prev));
-    }, 2000);
+  const handleCopySummary = async () => {
+    if (!analysis) return;
+    try {
+      await navigator.clipboard.writeText(analysis.summary);
+      setSummaryCopied(true);
+      window.setTimeout(() => setSummaryCopied(false), 1800);
+    } catch {
+      // Clipboard permissions may be unavailable in an embedded browser.
+    }
   };
 
-  const handleCopySummary = () => {
-    if (!analysis) return;
-    handleCopy('summary', analysis.summary);
-  };
-
-  const handleCopyEvents = () => {
-    if (!analysis) return;
-    const text = analysis.events
-      .map((e, i) => {
-        const clipStart = e.clip_start_seconds ?? e.start_seconds;
-        const clipEnd = e.clip_end_seconds ?? e.end_seconds;
-        const clip = `${formatSeconds(clipStart)} - ${formatSeconds(clipEnd)}`;
-        const src =
-          e.source_start_seconds !== null && e.source_start_seconds !== undefined
-            ? ` (Source: ${formatSeconds(e.source_start_seconds)} - ${formatSeconds(e.source_end_seconds || 0)})`
-            : '';
-        const meta = [
-          e.actor ? `Actor: ${e.actor}` : '',
-          e.action ? `Action: ${e.action}` : '',
-          e.object || e.object_name ? `Object: ${e.object || e.object_name}` : '',
-          e.target ? `Target: ${e.target}` : '',
-        ]
-          .filter(Boolean)
-          .join(' | ');
-
-        return `[Event ${i + 1}] ${clip}${src}\n${e.description}${meta ? `\nDetails: ${meta}` : ''}`;
-      })
-      .join('\n\n');
-
-    handleCopy('events', text);
-  };
-
-  const handleCopyJson = () => {
-    if (!analysis) return;
-    handleCopy('json', JSON.stringify(analysis, null, 2));
-  };
-
-  const handleDownloadJson = () => {
-    if (!analysis) return;
-    const blob = new Blob([JSON.stringify(analysis, null, 2)], {
-      type: 'application/json',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `analysis_${analysis.analysis_id}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleCopyEvent = async (eventIndex: number, description: string) => {
+    try {
+      await navigator.clipboard.writeText(description);
+      setCopiedEventIndex(eventIndex);
+      window.setTimeout(() => setCopiedEventIndex((current) => current === eventIndex ? null : current), 1800);
+    } catch {
+      // Keep the timeline usable if clipboard permissions are unavailable.
+    }
   };
 
   const handleSaveToLibrary = async () => {
@@ -154,6 +116,13 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
   }
 
   const isPersistent = analysis.is_persistent || saveSuccess;
+  const chronologicalEvents = analysis.events
+    .map((event, sourceIndex) => ({ event, sourceIndex }))
+    .sort((left, right) => {
+      const leftTime = left.event.source_start_seconds ?? left.event.start_seconds;
+      const rightTime = right.event.source_start_seconds ?? right.event.start_seconds;
+      return leftTime - rightTime || left.sourceIndex - right.sourceIndex;
+    });
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col space-y-4">
@@ -252,7 +221,6 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                 </span>
               )}
             </div>
-            <p className="text-xs text-slate-400 mt-1">{analysis.summary}</p>
           </div>
 
           {analysis.scene && (
@@ -279,6 +247,24 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
           </div>
         )}
 
+        <section className="rounded-lg border border-slate-800 bg-slate-950/50 p-3" aria-label="Video summary">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-xs font-semibold text-slate-200">Video Summary</h3>
+              <p className="mt-1.5 text-sm leading-relaxed text-slate-300">{analysis.summary}</p>
+            </div>
+            <button
+              onClick={handleCopySummary}
+              data-testid="copy-summary-btn"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/80 px-2.5 py-1.5 text-xs text-slate-300 transition hover:bg-slate-700/80 hover:text-white"
+              title="Copy video summary to clipboard"
+            >
+              {summaryCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <FileText className="w-3.5 h-3.5 text-slate-400" />}
+              <span>{summaryCopied ? 'Copied Summary' : 'Copy Summary'}</span>
+            </button>
+          </div>
+        </section>
+
         {/* Participants & Objects Chips */}
         {((analysis.participants && analysis.participants.length > 0) ||
           (analysis.objects && analysis.objects.length > 0)) && (
@@ -304,76 +290,9 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
           </div>
         )}
 
-        {/* Action Toolbar: Copy, Download & Save Actions */}
+        {/* Optional retention control for temporary analysis results */}
         <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/60">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              onClick={handleCopySummary}
-              data-testid="copy-summary-btn"
-              className="flex items-center space-x-1 text-xs text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 px-2.5 py-1 rounded-lg border border-slate-700 transition"
-              title="Copy video summary to clipboard"
-            >
-              {copiedType === 'summary' ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="text-emerald-400 font-medium">Copied Summary</span>
-                </>
-              ) : (
-                <>
-                  <FileText className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Copy Summary</span>
-                </>
-              )}
-            </button>
-
-            <button
-              onClick={handleCopyEvents}
-              data-testid="copy-events-btn"
-              className="flex items-center space-x-1 text-xs text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 px-2.5 py-1 rounded-lg border border-slate-700 transition"
-              title="Copy plain-text event list with timestamps"
-            >
-              {copiedType === 'events' ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="text-emerald-400 font-medium">Copied Events</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Copy Events</span>
-                </>
-              )}
-            </button>
-
-            <button
-              onClick={handleCopyJson}
-              data-testid="copy-analysis-json-btn"
-              className="flex items-center space-x-1 text-xs text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 px-2.5 py-1 rounded-lg border border-slate-700 transition"
-              title="Copy complete analysis JSON payload"
-            >
-              {copiedType === 'json' ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="text-emerald-400 font-medium">Copied JSON</span>
-                </>
-              ) : (
-                <>
-                  <Code className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Copy JSON</span>
-                </>
-              )}
-            </button>
-
-            <button
-              onClick={handleDownloadJson}
-              data-testid="download-analysis-json-btn"
-              className="flex items-center space-x-1 text-xs text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 px-2.5 py-1 rounded-lg border border-slate-700 transition"
-              title="Download analysis as a JSON file"
-            >
-              <Download className="w-3.5 h-3.5 text-slate-400" />
-              <span>Download JSON</span>
-            </button>
-          </div>
+          <span className="text-[11px] text-slate-500">{analysis.events.length} chronological events</span>
 
           {/* Explicit Save button for temporary analyses */}
           {analysis.is_temporary && !isPersistent && (
@@ -397,7 +316,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
       {/* Events List */}
       <div className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
-        {analysis.events.map((event, idx) => {
+        {chronologicalEvents.map(({ event, sourceIndex: idx }) => {
           const clipStart = event.clip_start_seconds ?? event.start_seconds;
           const clipEnd = event.clip_end_seconds ?? event.end_seconds;
           const hasSourceMapping =
@@ -465,23 +384,35 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                   )}
                 </div>
 
-                <button
-                  onClick={() =>
-                    onSelectInterval({
-                      start: hasSourceMapping ? sourceStart : clipStart,
-                      end: hasSourceMapping ? sourceEnd : clipEnd,
-                    })
-                  }
-                  data-testid={`play-event-interval-${idx}`}
-                  className="flex items-center space-x-1 text-xs text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-800 px-2.5 py-1 rounded transition shrink-0 ml-2"
-                  title={hasSourceMapping ? 'Seek to event in source video' : 'Seek to event in clip'}
-                >
-                  <Play className="w-3 h-3" />
-                  <span>{hasSourceMapping ? 'Play in source' : 'Play interval'}</span>
-                </button>
+                <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                  <button
+                    onClick={() =>
+                      onSelectInterval({
+                        start: hasSourceMapping ? sourceStart : clipStart,
+                        end: hasSourceMapping ? sourceEnd : clipEnd,
+                      })
+                    }
+                    data-testid={`play-event-interval-${idx}`}
+                    className="flex items-center space-x-1 text-xs text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-800 px-2.5 py-1 rounded transition"
+                    title={hasSourceMapping ? 'Seek to event in source video' : 'Seek to event in clip'}
+                  >
+                    <Play className="w-3 h-3" />
+                    <span>{hasSourceMapping ? 'Play in source' : 'Play interval'}</span>
+                  </button>
+                  <button
+                    onClick={() => void handleCopyEvent(idx, event.description)}
+                    data-testid={`copy-event-${idx}`}
+                    aria-label={`Copy event ${idx + 1} description`}
+                    className="inline-flex items-center gap-1 rounded bg-slate-800/80 px-2.5 py-1 text-xs text-slate-400 transition hover:bg-slate-800 hover:text-white"
+                    title="Copy only this event description"
+                  >
+                    {copiedEventIndex === idx ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedEventIndex === idx ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
               </div>
 
-              <p className="text-xs text-slate-200 font-medium leading-relaxed mb-2">
+              <p data-testid={`event-description-${idx}`} className="text-xs text-slate-200 font-medium leading-relaxed mb-2">
                 {event.description}
               </p>
 

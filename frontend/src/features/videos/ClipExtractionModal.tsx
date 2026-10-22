@@ -77,6 +77,8 @@ export const ClipExtractionModal: React.FC<ClipExtractionModalProps> = ({
   const [capturedFile, setCapturedFile] = useState<File | null>(null);
   const [capturedPreviewUrl, setCapturedPreviewUrl] = useState<string | null>(null);
   const [capturedDuration, setCapturedDuration] = useState<number>(0);
+  const [capturedWallClockDuration, setCapturedWallClockDuration] = useState<number>(0);
+  const [capturePlaybackRate, setCapturePlaybackRate] = useState<number>(1);
   const [captureWarning, setCaptureWarning] = useState<string | null>(null);
   const [captureError, setCaptureError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -116,6 +118,8 @@ export const ClipExtractionModal: React.FC<ClipExtractionModalProps> = ({
       setCapturedFile(null);
       setCapturedPreviewUrl(null);
       setCapturedDuration(0);
+      setCapturedWallClockDuration(0);
+      setCapturePlaybackRate(1);
       setIsCapturing(false);
       setCaptureProgress(null);
       setCaptureError(null);
@@ -257,6 +261,7 @@ export const ClipExtractionModal: React.FC<ClipExtractionModalProps> = ({
     };
 
     // Detach imported preview so modal unmount does not revoke the staged clip's object URL
+    importedPreviewUrlRef.current = null;
     setImportedPreviewUrl(null);
     onClipStaged(stagedItem);
     onClose();
@@ -283,19 +288,25 @@ export const ClipExtractionModal: React.FC<ClipExtractionModalProps> = ({
       );
 
       // Stale callback protection: if source changed while recording, discard result
-      if (activeSourceIdRef.current !== capturingSourceId) {
+      if (activeSourceIdRef.current !== capturingSourceId || controller.signal.aborted || !isOpen) {
         URL.revokeObjectURL(result.objectUrl);
         return;
       }
 
+      if (capturedPreviewUrlRef.current && capturedPreviewUrlRef.current !== result.objectUrl) {
+        URL.revokeObjectURL(capturedPreviewUrlRef.current);
+      }
+      capturedPreviewUrlRef.current = result.objectUrl;
       setCapturedFile(result.file);
       setCapturedPreviewUrl(result.objectUrl);
       setCapturedDuration(result.actualDurationSeconds);
+      setCapturedWallClockDuration(result.captureWallClockSeconds);
+      setCapturePlaybackRate(result.capturePlaybackRate);
       if (result.warningMessage) {
         setCaptureWarning(result.warningMessage);
       }
     } catch (err: any) {
-      if (activeSourceIdRef.current !== capturingSourceId) {
+      if (activeSourceIdRef.current !== capturingSourceId || !isOpen) {
         return;
       }
       if (err.message && err.message.includes('cancelled')) {
@@ -338,11 +349,15 @@ export const ClipExtractionModal: React.FC<ClipExtractionModalProps> = ({
       sourceEndSeconds: interval.end,
       sourceDurationSeconds: durationTarget,
       durationDeltaSeconds: delta,
+      captureWallClockSeconds: capturedWallClockDuration,
+      capturePlaybackRate: capturePlaybackRate,
       notes: interval.label ? `${interval.label} (Browser Capture)` : 'Browser Capture',
       createdAt: new Date().toISOString(),
     };
 
     // Detach captured preview so modal cleanup does not revoke staged object URL
+    // Transfer ownership synchronously before parent closes/unmounts this modal.
+    capturedPreviewUrlRef.current = null;
     setCapturedPreviewUrl(null);
     onClipStaged(stagedItem);
     onClose();
@@ -746,15 +761,23 @@ export const ClipExtractionModal: React.FC<ClipExtractionModalProps> = ({
               ) : (
                 <div className="space-y-3">
                   {!isCapturing && !capturedFile && (
-                    <button
-                      type="button"
-                      onClick={handleStartCapture}
-                      data-testid="start-browser-capture-btn"
-                      className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-xl shadow transition flex items-center justify-center space-x-2"
-                    >
-                      <Play className="w-4 h-4" />
-                      <span>Start In-Browser Capture ({durationTarget.toFixed(0)}s Realtime)</span>
-                    </button>
+                    <>
+                      {durationTarget > 120 && (
+                        <div className="bg-rose-950/40 border border-rose-800 p-3 rounded-lg text-rose-200" data-testid="capture-limit-warning">
+                          This {durationTarget.toFixed(1)} second interval exceeds the current 120 second Qwen limit. Choose a shorter interval; browser capture will not start.
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleStartCapture}
+                        disabled={durationTarget > 120}
+                        data-testid="start-browser-capture-btn"
+                        className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 disabled:text-slate-400 text-white text-xs font-bold rounded-xl shadow transition flex items-center justify-center space-x-2"
+                      >
+                        <Play className="w-4 h-4" />
+                        <span>Start In-Browser Capture ({durationTarget.toFixed(0)}s Realtime)</span>
+                      </button>
+                    </>
                   )}
 
                   {isCapturing && (
@@ -809,14 +832,14 @@ export const ClipExtractionModal: React.FC<ClipExtractionModalProps> = ({
                   )}
 
                   {capturedFile && capturedPreviewUrl && !isCapturing && (
-                    <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-3">
+                    <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-3" data-testid="capture-ready-for-staging">
                       <div className="flex items-center justify-between text-xs">
                         <div>
                           <span className="font-semibold text-white">{capturedFile.name}</span>
                           <span className="text-slate-500 ml-2 font-mono">({formatFileSize(capturedFile.size)})</span>
                         </div>
-                        <span className="font-mono text-emerald-400">
-                          Measured: {capturedDuration.toFixed(2)}s (Target: {durationTarget.toFixed(2)}s, Delta: {capturedDuration - durationTarget >= 0 ? '+' : ''}{(capturedDuration - durationTarget).toFixed(2)}s)
+                          <span className="font-mono text-emerald-400">
+                          Validated {capturedFile.type} · Media: {capturedDuration.toFixed(2)}s · Recorder wall time: {capturedWallClockDuration.toFixed(2)}s · Playback rate: {capturePlaybackRate.toFixed(2)}x · Target: {durationTarget.toFixed(2)}s (Delta: {capturedDuration - durationTarget >= 0 ? '+' : ''}{(capturedDuration - durationTarget).toFixed(2)}s)
                         </span>
                       </div>
 
@@ -852,9 +875,13 @@ export const ClipExtractionModal: React.FC<ClipExtractionModalProps> = ({
                         <button
                           type="button"
                           onClick={() => {
+                            if (capturedPreviewUrlRef.current) URL.revokeObjectURL(capturedPreviewUrlRef.current);
+                            capturedPreviewUrlRef.current = null;
                             setCapturedFile(null);
                             setCapturedPreviewUrl(null);
                             setCapturedDuration(0);
+                            setCapturedWallClockDuration(0);
+                            setCapturePlaybackRate(1);
                           }}
                           className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs"
                         >

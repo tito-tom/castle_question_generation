@@ -45,6 +45,7 @@ class VideoUnderstandingWorkflow:
         clip_start: str = "00:00:00",
         clip_end: str | None = None,
         duration_seconds: float | None = None,
+        source_metadata: dict | None = None,
     ) -> VideoUnderstandingResult:
         """
         Execute video understanding on a video file and save the structured analysis.
@@ -84,6 +85,11 @@ class VideoUnderstandingWorkflow:
         )
 
         analysis = self._service.analyze(clip)
+        if source_metadata:
+            analysis.source_video_name = source_metadata.get("source_filename")
+            analysis.source_start_seconds = source_metadata.get("source_start_seconds")
+            analysis.source_end_seconds = source_metadata.get("source_end_seconds")
+            analysis.temporal_alignment_status = source_metadata.get("alignment_status")
         output_path = self._repository.save(analysis)
         analysis_id = path.stem
 

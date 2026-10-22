@@ -70,7 +70,12 @@ class QuestionRepository:
         payload = {
             "source_clip": str(analysis.clip_path),
             "video_model": analysis.model_name,
-            "criteria": asdict(criteria),
+            # Persist algorithm settings only; never retain freeform user text.
+            "criteria": {
+                key: value
+                for key, value in asdict(criteria).items()
+                if key != "user_criteria"
+            },
             "questions": [
                 candidate.to_dict()
                 for candidate in questions

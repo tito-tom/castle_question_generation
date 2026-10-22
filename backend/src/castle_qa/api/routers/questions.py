@@ -99,7 +99,8 @@ def generate_question(
     """
     # Step 1: Build generation criteria.
     criteria = QACriteria(
-        max_questions=request.max_questions
+        max_questions=request.max_questions,
+        user_criteria=request.criteria_text,
     )
 
     # Step 2: Execute the application workflow.

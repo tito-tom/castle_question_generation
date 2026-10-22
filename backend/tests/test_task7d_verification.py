@@ -196,19 +196,37 @@ def test_canonical_route_aliases():
     assert resp_ok_2.json()["status"] == "success"
 
 
-def test_mode_aware_readiness_checker_semantics():
+def test_mode_aware_readiness_checker_semantics(tmp_path: Path):
     """Verify that readiness checker is mode-aware and does not misrepresent CPU laptops."""
+    # Isolate machine-specific prerequisites so this test focuses on inference mode.
+    project_root = tmp_path / "project"
+    for relative in (
+        "data/videos",
+        "data/clips/temp_uploads",
+        "data/analysis",
+        "data/questions",
+        "data/reviews",
+        "data/jobs",
+    ):
+        (project_root / relative).mkdir(parents=True, exist_ok=True)
+    (project_root / "data/videos/kitchen_8_day_1.mp4").write_bytes(b"fixture")
+    ready_ffmpeg = {"check": "FFmpeg / FFprobe Media Tools", "status": "PASS", "details": "controlled test prerequisite"}
+
     # In mock mode: overall pass should be True, blocked should be False
-    with patch.dict(os.environ, {"VIDEO_UNDERSTANDING_MODE": "mock"}):
-        results_mock, all_passed, is_blocked = run_all_checks()
+    with patch.dict(os.environ, {"VIDEO_UNDERSTANDING_MODE": "mock"}), \
+         patch("castle_qa.deployment.readiness_check.check_ffmpeg", return_value=ready_ffmpeg), \
+         patch("castle_qa.deployment.readiness_check.shutil.disk_usage", return_value=(2**40, 0, 2**40)):
+        results_mock, all_passed, is_blocked = run_all_checks(project_root)
         assert all_passed is True
         assert is_blocked is False
         cuda_check = next(c for c in results_mock if c["check"] == "GPU Acceleration (CUDA)")
         assert cuda_check["status"] == "NOT REQUIRED"
 
     # In real mode on CPU laptop: overall pass should be False, blocked should be True
-    with patch.dict(os.environ, {"VIDEO_UNDERSTANDING_MODE": "real"}):
-        results_real, all_passed_real, is_blocked_real = run_all_checks()
+    with patch.dict(os.environ, {"VIDEO_UNDERSTANDING_MODE": "real"}), \
+         patch("castle_qa.deployment.readiness_check.check_ffmpeg", return_value=ready_ffmpeg), \
+         patch("castle_qa.deployment.readiness_check.shutil.disk_usage", return_value=(2**40, 0, 2**40)):
+        results_real, all_passed_real, is_blocked_real = run_all_checks(project_root)
         assert all_passed_real is False
         assert is_blocked_real is True
         cuda_check_real = next(c for c in results_real if c["check"] == "GPU Acceleration (CUDA)")

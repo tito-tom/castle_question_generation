@@ -101,6 +101,7 @@ def submit_question_generation_job(
         analysis_id=request.analysis_id,
         clip_duration_seconds=request.clip_duration_seconds,
         max_questions=request.max_questions,
+        criteria_text=request.criteria_text,
     )
 
     # Step 3: Persist the queued job.
@@ -166,18 +167,61 @@ def submit_video_understanding_job(
             )
         video_service.session_service.record_activity(video.session_id, action="submit_video_understanding")
 
-    job = InferenceJob.new_video_understanding(
-        video_id=request.video_id,
-        video_path=str(video.path),
-        fps=request.fps,
-        max_new_tokens=request.max_new_tokens,
-    )
-
-    repository.create(job)
+    with video_service.video_lifecycle_guard(request.video_id):
+        current_video = video_service.get_video(request.video_id)
+        if current_video is None or not current_video.path.is_file():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video is no longer available")
+        job = InferenceJob.new_video_understanding(
+            video_id=request.video_id,
+            video_path=str(current_video.path),
+            fps=request.fps,
+            max_new_tokens=request.max_new_tokens,
+            source_metadata=current_video.source_metadata or {},
+            session_id=current_video.session_id,
+        )
+        repository.create(job)
 
     return JobSubmissionResponse(
         job_id=job.job_id,
         status=JobStatus.QUEUED.value,
+    )
+
+
+@router.delete(
+    "/{job_id}",
+    response_model=JobStatusResponse,
+    summary="Cancel a queued job or request cancellation of a running job",
+)
+def cancel_job(
+    job_id: Annotated[str, PathParameter(pattern=JOB_ID_PATTERN)],
+    repository: Annotated[JobRepository, Depends(get_job_repository)],
+    video_service: Annotated[VideoService, Depends(get_video_service)],
+    x_session_token: Annotated[str | None, Header(description="Session authorization token header")] = None,
+) -> JobStatusResponse:
+    job = repository.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    video_id = str(job.payload.get("video_id", ""))
+    if video_id.startswith("clip_"):
+        item = video_service.get_temporary_clip_metadata(video_id)
+        session_id = item.session_id if item else None
+        if session_id and (not x_session_token or not video_service.session_service.validate_token(session_id, x_session_token)):
+            raise HTTPException(status_code=403, detail="Unauthorized to cancel this temporary video job")
+    updated = repository.request_cancel(job_id)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if updated.status == JobStatus.FAILED and video_id.startswith("clip_"):
+        video_service.delete_temporary_clip(video_id, job_repository=repository)
+    return JobStatusResponse(
+        job_id=updated.job_id,
+        job_type=updated.job_type,
+        status=updated.status,
+        video_id=video_id or None,
+        created_at=updated.created_at,
+        started_at=updated.started_at,
+        finished_at=updated.finished_at,
+        result_id=updated.result_id,
+        error_message=updated.error_message,
     )
 
 

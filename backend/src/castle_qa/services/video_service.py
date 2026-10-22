@@ -6,6 +6,7 @@ import re
 import shutil
 import threading
 import time
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -127,6 +128,7 @@ class VideoService:
 
         leases_dir = self._temp_clips_dir / "leases"
         leases_dir.mkdir(parents=True, exist_ok=True)
+        self._leases_dir = leases_dir
         if stream_tracker is not None:
             self._stream_tracker = stream_tracker
         else:
@@ -505,6 +507,131 @@ class VideoService:
         )
         report = runner.run_once(dry_run=False)
         return report.purged_clip_ids
+
+    @contextmanager
+    def _video_lifecycle_guard(self, video_id: str):
+        """Coordinate stream acquisition and media deletion across processes."""
+        if not re.fullmatch(r"(?:clip|vid)_[A-Za-z0-9_-]{1,180}", video_id):
+            raise ValueError("Invalid video identifier")
+        guard_path = self._leases_dir / f".{video_id}.lifecycle.lock"
+        deadline = time.monotonic() + 10.0
+        descriptor = None
+        while descriptor is None:
+            try:
+                descriptor = os.open(str(guard_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            except FileExistsError:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(f"Video lifecycle lock busy for {video_id}")
+                time.sleep(0.02)
+        try:
+            yield
+        finally:
+            os.close(descriptor)
+            guard_path.unlink(missing_ok=True)
+
+    def video_lifecycle_guard(self, video_id: str):
+        """Public coordination guard for endpoints that create media-dependent jobs."""
+        return self._video_lifecycle_guard(video_id)
+
+    def acquire_video_stream(self, video_id: str) -> tuple[VideoItem, str]:
+        """Acquire a stream lease atomically with respect to temporary media cleanup."""
+        with self._video_lifecycle_guard(video_id):
+            item = self.get_video(video_id)
+            if item is None or not item.path.is_file():
+                raise FileNotFoundError(f"Video '{video_id}' not found")
+            return item, self._stream_tracker.acquire(video_id)
+
+    def get_temporary_clip_metadata(self, video_id: str) -> VideoItem | None:
+        """Read a temporary clip's retained provenance metadata, even after media deletion."""
+        if not video_id.startswith("clip_"):
+            return None
+        meta_file = self._temp_metadata_dir / f"{video_id}.json"
+        if not meta_file.exists():
+            prefix_match = re.match(r"^(clip_[0-9a-fA-F]+)", video_id)
+            if prefix_match:
+                meta_file = self._temp_metadata_dir / f"{prefix_match.group(1)}.json"
+        if not meta_file.is_file() or meta_file.is_symlink():
+            return None
+        try:
+            with meta_file.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            path = Path(data["path"])
+            return VideoItem(
+                video_id=data["video_id"],
+                filename=data["filename"],
+                path=path,
+                duration_seconds=float(data["duration_seconds"]),
+                size_bytes=int(data["size_bytes"]),
+                created_at=data["created_at"],
+                width=data.get("width"),
+                height=data.get("height"),
+                fps=data.get("fps"),
+                codec_name=data.get("codec_name"),
+                is_temporary=True,
+                session_id=data.get("session_id"),
+                expires_at=data.get("expires_at"),
+                source_metadata=data.get("source_metadata") or {},
+            )
+        except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+            logger.warning("Could not read retained metadata for temporary clip %s", video_id)
+            return None
+
+    def delete_temporary_clip(
+        self,
+        video_id: str,
+        *,
+        job_repository: Any = None,
+    ) -> bool:
+        """Delete only a temporary clip's media after jobs and streams release it.
+
+        The metadata file is retained as a tombstone so saved analyses keep their
+        source timing, session authorization, and video-availability state.
+        """
+        with self._video_lifecycle_guard(video_id):
+            item = self.get_temporary_clip_metadata(video_id)
+            if item is None:
+                return False
+            if job_repository is not None and job_repository.has_active_jobs_for_video(video_id):
+                self._set_temporary_clip_delete_pending(video_id, True)
+                logger.info("Retaining temporary clip %s while an inference job is active", video_id)
+                return False
+            if self._stream_tracker.has_active_streams(video_id):
+                self._set_temporary_clip_delete_pending(video_id, True)
+                logger.info("Retaining temporary clip %s while a stream lease is active", video_id)
+                return False
+
+            resolved = item.path.resolve()
+            if resolved.is_symlink() or resolved.parent != self._temp_clips_dir.resolve():
+                logger.error("Refusing to delete temporary clip outside managed directory: %s", resolved)
+                return False
+            if resolved.exists():
+                resolved.unlink()
+                logger.info("Deleted temporary clip media %s; retained metadata and analysis", video_id)
+            self._set_temporary_clip_delete_pending(video_id, False)
+            return True
+
+    def is_temporary_clip_delete_pending(self, video_id: str) -> bool:
+        meta_file = self._temp_metadata_dir / f"{video_id}.json"
+        if not meta_file.is_file() or meta_file.is_symlink():
+            return False
+        try:
+            with meta_file.open("r", encoding="utf-8") as f:
+                return bool(json.load(f).get("delete_after_processing"))
+        except Exception:
+            return False
+
+    def _set_temporary_clip_delete_pending(self, video_id: str, pending: bool) -> None:
+        meta_file = self._temp_metadata_dir / f"{video_id}.json"
+        try:
+            with meta_file.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            data["delete_after_processing"] = pending
+            temp_file = meta_file.with_name(f".{meta_file.name}.tmp")
+            with temp_file.open("w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            temp_file.replace(meta_file)
+        except (OSError, ValueError, TypeError):
+            logger.warning("Could not update cleanup marker for temporary clip %s", video_id)
 
     def list_videos(self, session_id: str | None = None) -> list[VideoItem]:
         """

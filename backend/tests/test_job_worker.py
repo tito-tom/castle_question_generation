@@ -160,10 +160,34 @@ def test_successful_job_processing(
     assert saved.result_id == generation_id
 
 
+def test_successful_job_redacts_criteria_after_worker_consumes_it(repository):
+    job = InferenceJob.new_question_generation(
+        analysis_id="kitchen_test",
+        clip_duration_seconds=60,
+        criteria_text="private criteria text",
+    )
+    repository.create(job)
+
+    consumed = []
+    worker = InferenceJobWorker(
+        repository=repository,
+        generate_and_save=lambda claimed: consumed.append(claimed.payload["criteria_text"]) or f"gen_{uuid4().hex}",
+    )
+    result = worker.process_next()
+
+    assert result is not None and result.status == JobStatus.COMPLETED
+    assert consumed == ["private criteria text"]
+    assert "criteria_text" not in repository.get(job.job_id).payload
+
+
 def test_handler_exception_marks_job_failed(
     repository: JobRepository,
 ):
-    job = make_job()
+    job = InferenceJob.new_question_generation(
+        analysis_id="kitchen_test",
+        clip_duration_seconds=60,
+        criteria_text="temporary criteria to redact",
+    )
     repository.create(job)
 
     handler = Mock(
@@ -198,6 +222,7 @@ def test_handler_exception_marks_job_failed(
 
     assert saved is not None
     assert saved.status == JobStatus.FAILED
+    assert "criteria_text" not in saved.payload
 
 
 @pytest.mark.parametrize(

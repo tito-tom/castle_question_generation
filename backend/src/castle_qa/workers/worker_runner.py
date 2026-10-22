@@ -98,6 +98,11 @@ class WorkerRunner:
                                 "Recovered %d stale jobs",
                                 len(recovered),
                             )
+                            finalize = getattr(self._worker, "finalize_terminal", None)
+                            if callable(finalize):
+                                for recovered_job in recovered:
+                                    if recovered_job.status.value == "failed":
+                                        finalize(recovered_job)
                     except Exception:
                         logger.exception(
                             "Error during periodic stale job recovery"

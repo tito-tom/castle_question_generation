@@ -9,6 +9,7 @@
  */
 
 import { formatTimestamp } from './timestampUtils';
+import { AnalysisWindow } from './analysisWindows';
 
 export type SupportedShell = 'powershell' | 'cmd' | 'bash';
 export type NativeExtractionMode = 'frame_accurate' | 'fast_copy';
@@ -32,6 +33,12 @@ export interface GeneratedNativeCommand {
   sourcePlaceholder: string;
   isFrameAccurate: boolean;
   keyframeWarning?: string;
+}
+
+export interface GeneratedNativeBatchCommand {
+  scriptContent: string;
+  scriptExtension: string;
+  outputFilenames: string[];
 }
 
 /**
@@ -136,6 +143,7 @@ export function generateNativeCommand(
   const startFormatted = formatTimestamp(startSeconds);
   const endFormatted = formatTimestamp(endSeconds);
   const duration = Math.max(0, endSeconds - startSeconds);
+  const sourceLabel = sanitizeFilename(stripControlChars(sourceFilename));
 
   // Generate clean default output filename
   const baseName = sourceFilename.replace(/\.[^/.]+$/, '');
@@ -172,13 +180,13 @@ export function generateNativeCommand(
 
     scriptContent = [
       '# CASTLE QA Studio - Native Video Clip Extraction Script (PowerShell)',
-      `# Source Video   : ${sourceFilename}`,
+      `# Source Video   : ${sourceLabel}`,
       `# Target Interval: ${startFormatted} -> ${endFormatted} (${duration.toFixed(1)}s)`,
       `# Mode           : ${isFrameAccurate ? 'Frame-Accurate Re-encode' : 'Fast Keyframe Copy'}`,
       '# Overwrite      : Prompt (avoiding silent overwrite)',
       keyframeWarning ? `# Note           : ${keyframeWarning}` : '',
       '',
-      `Write-Host "Extracting short clip from ${sourceFilename}..." -ForegroundColor Cyan`,
+      `Write-Host "Extracting short clip from ${sourceLabel}..." -ForegroundColor Cyan`,
       commandLine,
       'if ($LASTEXITCODE -eq 0) {',
       `    Write-Host "Extraction completed successfully: ${outputFilename}" -ForegroundColor Green`,
@@ -200,13 +208,13 @@ export function generateNativeCommand(
     scriptContent = [
       '@echo off',
       'REM CASTLE QA Studio - Native Video Clip Extraction Script (Windows CMD)',
-      `REM Source Video   : ${sourceFilename}`,
+      `REM Source Video   : ${sourceLabel}`,
       `REM Target Interval: ${startFormatted} -> ${endFormatted} (${duration.toFixed(1)}s)`,
       `REM Mode           : ${isFrameAccurate ? 'Frame-Accurate Re-encode' : 'Fast Keyframe Copy'}`,
       'REM Overwrite      : Prompt (avoiding silent overwrite)',
       keyframeWarning ? `REM Note           : ${keyframeWarning}` : '',
       '',
-      `echo Extracting short clip from ${sourceFilename}...`,
+      `echo Extracting short clip from ${sourceLabel}...`,
       scriptCommandLine,
       'if %ERRORLEVEL% EQU 0 (',
       `    echo Extraction completed successfully: ${outputFilename}`,
@@ -227,14 +235,14 @@ export function generateNativeCommand(
     scriptContent = [
       '#!/usr/bin/env bash',
       '# CASTLE QA Studio - Native Video Clip Extraction Script (Bash)',
-      `# Source Video   : ${sourceFilename}`,
+      `# Source Video   : ${sourceLabel}`,
       `# Target Interval: ${startFormatted} -> ${endFormatted} (${duration.toFixed(1)}s)`,
       `# Mode           : ${isFrameAccurate ? 'Frame-Accurate Re-encode' : 'Fast Keyframe Copy'}`,
       '# Overwrite      : Prompt (avoiding silent overwrite)',
       keyframeWarning ? `# Note           : ${keyframeWarning}` : '',
       'set -e',
       '',
-      `echo "Extracting short clip from ${sourceFilename}..."`,
+      `echo "Extracting short clip from ${sourceLabel}..."`,
       commandLine,
       `echo "Extraction completed successfully: ${outputFilename}"`,
       '',
@@ -251,5 +259,82 @@ export function generateNativeCommand(
     sourcePlaceholder: rawInput,
     isFrameAccurate,
     keyframeWarning,
+  };
+}
+
+export function generateNativeBatchCommand(
+  shell: SupportedShell,
+  options: Omit<NativeCommandOptions, 'startSeconds' | 'endSeconds' | 'customOutputFilename'> & {
+    windows: AnalysisWindow[];
+    outputFilenames: string[];
+  },
+): GeneratedNativeBatchCommand {
+  const { sourceFilename, sourcePathPlaceholder, windows, outputFilenames } = options;
+  if (windows.length === 0 || windows.length !== outputFilenames.length) {
+    throw new Error('Each analysis window needs one output filename.');
+  }
+  const rawInput = sourcePathPlaceholder?.trim() || sourceFilename || 'input_video.mp4';
+  const sourceLabel = sanitizeFilename(stripControlChars(sourceFilename));
+  const isFrameAccurate = options.mode === 'frame_accurate';
+  const codecArgs = isFrameAccurate
+    ? '-c:v libx264 -preset veryfast -crf 22 -c:a aac -b:a 128k'
+    : '-c copy -avoid_negative_ts make_zero';
+  const commands = windows.map((window, index) => {
+    const start = formatTimestamp(window.startSeconds);
+    const end = formatTimestamp(window.endSeconds);
+    const output = outputFilenames[index];
+    if (shell === 'powershell') {
+      return `ffmpeg -ss ${start} -to ${end} -i ${escapePowerShellArg(rawInput)} ${codecArgs} ${escapePowerShellArg(output)}\nif ($LASTEXITCODE -ne 0) { throw 'FFmpeg failed for window ${String(window.index).padStart(2, '0')}' }`;
+    }
+    if (shell === 'cmd') {
+      return `ffmpeg -ss ${start} -to ${end} -i ${escapeCmdArg(rawInput, true)} ${codecArgs} ${escapeCmdArg(output, true)}\nif errorlevel 1 exit /b %ERRORLEVEL%`;
+    }
+    return `ffmpeg -ss ${start} -to ${end} -i ${escapeBashArg(rawInput)} ${codecArgs} ${escapeBashArg(output)}\necho "Finished window ${String(window.index).padStart(2, '0')}"`;
+  });
+
+  if (shell === 'powershell') {
+    return {
+      scriptExtension: 'ps1',
+      outputFilenames,
+      scriptContent: [
+        '# CASTLE QA Studio - Native FFmpeg analysis-window batch',
+        `# Source: ${sourceLabel}`,
+        '# The original recording stays on your device; only imported window clips are uploaded.',
+        `# Mode: ${isFrameAccurate ? 'frame-accurate re-encode' : 'fast keyframe copy (approximate timing)'}`,
+        "$ErrorActionPreference = 'Stop'",
+        '',
+        ...commands,
+        '',
+      ].join('\n'),
+    };
+  }
+  if (shell === 'cmd') {
+    return {
+      scriptExtension: 'bat',
+      outputFilenames,
+      scriptContent: [
+        '@echo off',
+        'REM CASTLE QA Studio - Native FFmpeg analysis-window batch',
+        `REM Source: ${sourceLabel}`,
+        'REM Original recording remains local; only imported window clips are uploaded.',
+        ...commands,
+        '',
+      ].join('\r\n'),
+    };
+  }
+  return {
+    scriptExtension: 'sh',
+    outputFilenames,
+    scriptContent: [
+      '#!/usr/bin/env bash',
+      '# CASTLE QA Studio - Native FFmpeg analysis-window batch',
+      `# Source: ${sourceLabel}`,
+      '# Original recording remains local; only imported window clips are uploaded.',
+      `# Mode: ${isFrameAccurate ? 'frame-accurate re-encode' : 'fast keyframe copy (approximate timing)'}`,
+      'set -e',
+      '',
+      ...commands,
+      '',
+    ].join('\n'),
   };
 }

@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
+from typing import Any
 from uuid import uuid4
 
 class JobStatus(str, Enum):
@@ -22,7 +23,7 @@ class InferenceJob:
     job_type: JobType
     status: JobStatus
 
-    payload: dict[str, str | int | float]
+    payload: dict[str, Any]
 
     created_at: str
 
@@ -46,6 +47,7 @@ class InferenceJob:
         analysis_id: str,
         clip_duration_seconds: float,
         max_questions: int = 5,
+        criteria_text: str = "",
     ) -> "InferenceJob":
         """
         Create a queued Qwen question-generation job.
@@ -66,6 +68,9 @@ class InferenceJob:
                 "max_questions must be positive"
             )
 
+        if len(criteria_text) > 16_384:
+            raise ValueError("criteria_text must be 16384 characters or fewer")
+
         return cls(
             job_id=f"job_{uuid4().hex}",
             job_type=JobType.QUESTION_GENERATION,
@@ -77,6 +82,7 @@ class InferenceJob:
                     clip_duration_seconds
                 ),
                 "max_questions": max_questions,
+                "criteria_text": criteria_text,
             },
             created_at=datetime.now(
                 timezone.utc
@@ -90,6 +96,8 @@ class InferenceJob:
         video_path: str,
         fps: float = 2.0,
         max_new_tokens: int = 1024,
+        source_metadata: dict[str, Any] | None = None,
+        session_id: str | None = None,
     ) -> "InferenceJob":
         """
         Create a queued video-understanding job.
@@ -123,6 +131,8 @@ class InferenceJob:
                 "video_path": video_path.strip(),
                 "fps": fps,
                 "max_new_tokens": max_new_tokens,
+                "source_metadata": source_metadata or {},
+                "session_id": session_id or "",
             },
             created_at=datetime.now(
                 timezone.utc

@@ -17,10 +17,16 @@ from castle_qa.services.question_generation.question_generation_service import (
 )
 
 class QwenLocalQuestionGenerator(QuestionGenerationService):
-    """
-    Generate question suggestions directly from structured
-    events using Qwen2.5VL text-only inference.
-    """
+    """Generate question suggestions from structured event evidence."""
+
+    _GROUNDING_STOP_WORDS = {
+        "a", "an", "and", "are", "as", "at", "be", "been", "being", "by",
+        "can", "could", "did", "do", "does", "for", "from", "how", "in",
+        "is", "it", "may", "might", "of", "on", "or", "should", "that",
+        "the", "their", "them", "there", "these", "they", "this", "those",
+        "to", "was", "were", "what", "when", "where", "which", "while",
+        "who", "why", "will", "would",
+    }
 
     def __init__(
         self,
@@ -107,6 +113,7 @@ class QwenLocalQuestionGenerator(QuestionGenerationService):
                 "require_who": criteria.require_who,
                 "max_questions": criteria.max_questions,
             },
+            "user_question_criteria_untrusted_reference": criteria.user_criteria,
             "scene": analysis.scene,
             "events": events,
         }
@@ -123,23 +130,26 @@ class QwenLocalQuestionGenerator(QuestionGenerationService):
 
         raw_response = self._generate_text(prompt)
 
-        self._raw_output_dir.mkdir(
-            parents=True,
-            exist_ok=True
-        )
-
-        raw_path = (
-            self._raw_output_dir
-            / (
-                f"{Path(analysis.clip_path).stem}"
-                "_qwen_questions_raw.txt"
+        # Raw model responses can repeat user-provided criteria. Keep raw
+        # debugging artifacts only for runs without freeform criteria.
+        if not criteria.user_criteria:
+            self._raw_output_dir.mkdir(
+                parents=True,
+                exist_ok=True
             )
-        )
 
-        raw_path.write_text(
-            raw_response,
-            encoding="utf-8",
-        )
+            raw_path = (
+                self._raw_output_dir
+                / (
+                    f"{Path(analysis.clip_path).stem}"
+                    "_qwen_questions_raw.txt"
+                )
+            )
+
+            raw_path.write_text(
+                raw_response,
+                encoding="utf-8",
+            )
 
         generated_questions = self.parse_response(
             raw_response
@@ -178,6 +188,8 @@ class QwenLocalQuestionGenerator(QuestionGenerationService):
                 continue
 
             event = eligible_events[index]
+            if not self._question_is_grounded(question, event):
+                continue
 
             candidate = QuestionCandidate(
                 question=question,
@@ -200,6 +212,32 @@ class QwenLocalQuestionGenerator(QuestionGenerationService):
                 break
 
         return results
+
+    @classmethod
+    def _question_is_grounded(cls, question: str, event) -> bool:
+        """Reject question wording that adds content absent from its event."""
+
+        def content_terms(text: str) -> set[str]:
+            terms = set()
+            for token in re.findall(r"[a-z]+", text.casefold()):
+                if token in cls._GROUNDING_STOP_WORDS or len(token) < 3:
+                    continue
+                # A small suffix normalization accepts common inflections
+                # without treating unrelated nouns or actions as equivalent.
+                for suffix in ("ing", "ed", "es", "s"):
+                    if len(token) > len(suffix) + 3 and token.endswith(suffix):
+                        token = token[:-len(suffix)]
+                        break
+                terms.add(token)
+            return terms
+
+        observed = " ".join(filter(None, (
+            event.description,
+            event.action,
+            event.object_name,
+            event.target,
+        )))
+        return content_terms(question) <= content_terms(observed)
 
     @staticmethod
     def parse_response(

@@ -144,7 +144,7 @@ export const ClipSelectionPanel: React.FC<ClipSelectionPanelProps> = ({
 
   // Preview Interval
   const handlePreview = () => {
-    const validation = validateInterval(startSeconds, endSeconds, videoDuration);
+    const validation = validateInterval(startSeconds, endSeconds, videoDuration, 600);
     if (!validation.isValid) {
       setValidationError(validation.error);
       return;
@@ -155,7 +155,7 @@ export const ClipSelectionPanel: React.FC<ClipSelectionPanelProps> = ({
 
   // Add or Update Selection
   const handleSaveSelection = () => {
-    const validation = validateInterval(startSeconds, endSeconds, videoDuration);
+    const validation = validateInterval(startSeconds, endSeconds, videoDuration, 600);
     if (!validation.isValid) {
       setValidationError(validation.error);
       return;
@@ -465,10 +465,10 @@ export const ClipSelectionPanel: React.FC<ClipSelectionPanelProps> = ({
             }}
             data-testid="extract-clip-btn"
             className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow transition flex items-center space-x-1.5"
-            title="Extract short clip using native FFmpeg, direct import, or browser capture"
+            title="Prepare short clips for this selected interval"
           >
             <Scissors className="w-3.5 h-3.5" />
-            <span>Extract Clip</span>
+            <span>Prepare Analysis Clips</span>
           </button>
         </div>
       </div>

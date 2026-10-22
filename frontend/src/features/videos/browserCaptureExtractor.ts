@@ -23,9 +23,82 @@ export interface BrowserCaptureResult {
   actualDurationSeconds: number;
   requestedDurationSeconds: number;
   durationDeltaSeconds: number;
+  captureWallClockSeconds: number;
+  capturePlaybackRate: number;
   mimeType: string;
   wasBackgroundThrottled: boolean;
   warningMessage?: string;
+}
+
+export interface ValidatedVideoMetadata {
+  durationSeconds: number;
+  width: number;
+  height: number;
+  mimeType: string;
+}
+
+/** Decode and briefly play/seek a local video before allowing it to be staged. */
+export async function validateVideoFile(file: File, timeoutMs = 10000): Promise<ValidatedVideoMetadata> {
+  if (!(file instanceof Blob) || file.size <= 0) throw new Error('Captured video is empty. Retry capture or use Native FFmpeg.');
+  const mime = file.type.toLowerCase();
+  if (!mime.startsWith('video/') || (!mime.includes('mp4') && !mime.includes('webm'))) {
+    throw new Error(`Unsupported captured media format (${mime || 'unknown'}). Use Native FFmpeg or Import Existing Clip.`);
+  }
+
+  const url = URL.createObjectURL(file);
+  const video = document.createElement('video');
+  video.muted = true;
+  video.preload = 'auto';
+  video.playsInline = true;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timer = window.setTimeout(() => reject(new Error('Timed out while decoding captured video. Retry or use Native FFmpeg.')), timeoutMs);
+      const cleanup = () => { clearTimeout(timer); video.removeEventListener('loadedmetadata', metadata); video.removeEventListener('loadeddata', loaded); video.removeEventListener('error', failed); };
+      const metadata = () => {
+        if (video.videoWidth <= 0 || video.videoHeight <= 0) {
+          cleanup();
+          reject(new Error(`Captured media has no decodable video track (${video.videoWidth}x${video.videoHeight}). Retry or use Native FFmpeg.`));
+        }
+      };
+      const loaded = () => { cleanup(); resolve(); };
+      const failed = () => { cleanup(); reject(new Error('Captured video could not be decoded by this browser. Retry or use Native FFmpeg.')); };
+      video.addEventListener('loadedmetadata', metadata, { once: true });
+      video.addEventListener('loadeddata', loaded, { once: true });
+      video.addEventListener('error', failed, { once: true });
+      video.src = url;
+      video.load();
+    });
+
+    // Some valid MediaRecorder WebM files report duration=Infinity, but expose
+    // a finite end through the media element's seekable ranges.
+    const duration = Number.isFinite(video.duration)
+      ? video.duration
+      : video.seekable.length > 0
+        ? video.seekable.end(video.seekable.length - 1)
+        : NaN;
+    if (!Number.isFinite(duration) || duration <= 0 || video.videoWidth <= 0 || video.videoHeight <= 0) {
+      throw new Error('Captured video has no valid video track or duration. Retry or use Native FFmpeg.');
+    }
+    // loadeddata confirms a decoded frame; seek and play briefly to catch broken media ranges.
+    if (duration > 0.1) {
+      await new Promise<void>((resolve, reject) => {
+        const timer = window.setTimeout(() => reject(new Error('Captured video could not seek. Retry or use Native FFmpeg.')), timeoutMs);
+        const done = () => { clearTimeout(timer); video.removeEventListener('seeked', done); video.removeEventListener('error', failed); resolve(); };
+        const failed = () => { clearTimeout(timer); video.removeEventListener('seeked', done); reject(new Error('Captured video failed during seek. Retry or use Native FFmpeg.')); };
+        video.addEventListener('seeked', done, { once: true });
+        video.addEventListener('error', failed, { once: true });
+        video.currentTime = Math.min(0.05, duration / 2);
+      });
+      try { await video.play(); } catch { throw new Error('Captured video could not play after decoding. Retry or use Native FFmpeg.'); }
+      video.pause();
+    }
+    return { durationSeconds: duration, width: video.videoWidth, height: video.videoHeight, mimeType: mime };
+  } finally {
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+    URL.revokeObjectURL(url);
+  }
 }
 
 export function isBrowserCaptureSupported(): boolean {
@@ -44,11 +117,11 @@ export function getPreferredMimeType(): string {
   }
 
   const candidates = [
-    'video/mp4;codecs=avc1,mp4a.40.2',
+    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
     'video/mp4;codecs=avc1',
     'video/mp4',
-    'video/webm;codecs=vp9,opus',
     'video/webm;codecs=vp8,opus',
+    'video/webm;codecs=vp9,opus',
     'video/webm',
   ];
 
@@ -62,7 +135,7 @@ export function getPreferredMimeType(): string {
     }
   }
 
-  return 'video/webm';
+  return '';
 }
 
 /**
@@ -149,9 +222,10 @@ export async function extractClipWithBrowserCapture(
 
   const targetDuration = Math.max(0.1, endSeconds - startSeconds);
   const mimeType = getPreferredMimeType();
-  const extension = mimeType.includes('mp4') ? 'mp4' : 'webm';
+  if (!mimeType) throw new Error('This browser cannot record a supported MP4 or WebM format. Use Native FFmpeg or Import Existing Clip.');
+  if (targetDuration > 120) throw new Error('This interval exceeds the current 120-second Qwen limit. Select a shorter interval or use Import Existing Clip for local processing.');
   const baseName = sourceFile.name.replace(/\.[^/.]+$/, '');
-  const outputFilename = `browser_clip_${baseName}_${Math.round(startSeconds)}s_to_${Math.round(endSeconds)}s.${extension}`;
+  let outputFilename = '';
 
   const sourceObjectUrl = URL.createObjectURL(sourceFile);
   const video = document.createElement('video');
@@ -249,6 +323,13 @@ export async function extractClipWithBrowserCapture(
     }
 
     recorder = new MediaRecorder(stream, { mimeType });
+    const actualMimeType = recorder.mimeType || mimeType;
+    const normalizedMime = actualMimeType.toLowerCase();
+    const extension = normalizedMime.includes('mp4') ? 'mp4' : normalizedMime.includes('webm') ? 'webm' : '';
+    if (!extension || !normalizedMime.startsWith('video/')) {
+      throw new Error(`Browser selected unsupported recording format (${actualMimeType || 'unknown'}). Use Native FFmpeg or Import Existing Clip.`);
+    }
+    outputFilename = `browser_clip_${baseName}_${Math.round(startSeconds)}s_to_${Math.round(endSeconds)}s.${extension}`;
     recorder.ondataavailable = (e) => {
       if (e.data && e.data.size > 0) {
         chunks.push(e.data);
@@ -256,6 +337,7 @@ export async function extractClipWithBrowserCapture(
     };
 
     // 4. Start recording and playback
+    const recordingStartedAt = performance.now();
     recorder.start(100);
     await video.play();
 
@@ -302,17 +384,21 @@ export async function extractClipWithBrowserCapture(
         }
       }, 30);
     });
+    const captureWallClockSeconds = (performance.now() - recordingStartedAt) / 1000;
 
+    onProgress?.({ currentTime: endSeconds, startSeconds, endSeconds, percent: 100, statusText: 'Finalizing recorded media...' });
     // 6. Compile Blob into File
-    const finalBlob = new Blob(chunks, { type: mimeType });
+    const finalBlob = new Blob(chunks, { type: actualMimeType });
     const finalFile = new File([finalBlob], outputFilename, {
-      type: mimeType,
+      type: actualMimeType,
       lastModified: Date.now(),
     });
 
     // 7. Measure actual duration
-    const actualDuration = await measureVideoFileDuration(finalFile);
-    const durationDelta = actualDuration > 0 ? actualDuration - targetDuration : 0;
+    onProgress?.({ currentTime: endSeconds, startSeconds, endSeconds, percent: 100, statusText: 'Validating video decode, frame, seek and playback...' });
+    const validated = await validateVideoFile(finalFile);
+    const actualDuration = validated.durationSeconds;
+    const durationDelta = actualDuration - targetDuration;
     const finalObjectUrl = URL.createObjectURL(finalFile);
 
     let warningMessage: string | undefined = undefined;
@@ -333,7 +419,9 @@ export async function extractClipWithBrowserCapture(
       actualDurationSeconds: actualDuration > 0 ? actualDuration : targetDuration,
       requestedDurationSeconds: targetDuration,
       durationDeltaSeconds: durationDelta,
-      mimeType,
+      captureWallClockSeconds,
+      capturePlaybackRate: video.playbackRate,
+      mimeType: actualMimeType,
       wasBackgroundThrottled,
       warningMessage,
     };

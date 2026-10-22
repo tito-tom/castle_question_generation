@@ -52,6 +52,13 @@ def get_job_repository() -> JobRepository:
     return JobRepository(database_path=db_path)
 
 
+def _release_video_stream(service: VideoService, repository: JobRepository, video_id: str, lease_id: str) -> None:
+    service.stream_tracker.release(video_id, lease_id)
+    if service.is_temporary_clip_delete_pending(video_id):
+        service.delete_temporary_clip(video_id, job_repository=repository)
+    repository.close()
+
+
 @router.post(
     "/upload",
     response_model=VideoDetailResponse,
@@ -211,6 +218,26 @@ def upload_temporary_clip(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to process temporary video clip: {e}",
         )
+
+
+@router.delete("/temporary-clips/{video_id}", summary="Delete one terminal temporary clip")
+def delete_temporary_clip(
+    video_id: Annotated[str, PathParam(pattern=r"^clip_[A-Za-z0-9_-]+$")],
+    service: Annotated[VideoService, Depends(get_video_service)],
+    repository: Annotated[JobRepository, Depends(get_job_repository)],
+    x_session_token: Annotated[str | None, Header(description="Temporary session token")] = None,
+) -> dict[str, Any]:
+    item = service.get_temporary_clip_metadata(video_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Temporary clip not found")
+    if not x_session_token or not service.session_service.validate_token(item.session_id or "", x_session_token):
+        raise HTTPException(status_code=403, detail="Valid temporary session token required")
+    deleted = service.delete_temporary_clip(video_id, job_repository=repository)
+    return {
+        "video_id": video_id,
+        "media_deleted": deleted,
+        "deletion_pending": service.is_temporary_clip_delete_pending(video_id),
+    }
 
 
 @router.post(
@@ -393,6 +420,7 @@ def get_video_detail(
 def stream_video(
     video_id: Annotated[str, PathParam(description="ID of the video")],
     service: Annotated[VideoService, Depends(get_video_service)],
+    repository: Annotated[JobRepository, Depends(get_job_repository)],
     x_session_token: Annotated[str | None, Header()] = None,
     token: Annotated[str | None, Query(description="Session authorization token")] = None,
 ):
@@ -413,14 +441,20 @@ def stream_video(
             detail=f"Video '{video_id}' not found",
         )
 
-    # Acquire active stream lease (multi-process file-backed lease)
-    lease_id = service.stream_tracker.acquire(video_id)
+    # Acquire the stream lease atomically against automatic media cleanup.
+    try:
+        item, lease_id = service.acquire_video_stream(video_id)
+    except (FileNotFoundError, TimeoutError):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Video '{video_id}' not found or currently unavailable",
+        )
 
     mime_type, _ = mimetypes.guess_type(str(item.path))
     media_type = mime_type or "video/mp4"
 
     # Background task ensures stream lease is released on completion or disconnect
-    background = BackgroundTask(service.stream_tracker.release, video_id, lease_id)
+    background = BackgroundTask(_release_video_stream, service, repository, video_id, lease_id)
 
     return FileResponse(
         path=item.path,

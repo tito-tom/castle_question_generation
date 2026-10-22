@@ -273,13 +273,16 @@ def check_inference_mode_and_gpu() -> List[Dict[str, Any]]:
     return results
 
 
-def run_all_checks() -> Tuple[List[Dict[str, Any]], bool, bool]:
+def run_all_checks(project_root: Path | None = None) -> Tuple[List[Dict[str, Any]], bool, bool]:
     """
     Run all readiness checks and return results, overall pass status, and blocked status.
     """
-    project_root = Path(__file__).resolve().parents[4]
-    if not (project_root / "compose.yaml").exists():
-        project_root = Path.cwd()
+    if project_root is None:
+        project_root = Path(__file__).resolve().parents[4]
+        if not (project_root / "compose.yaml").exists():
+            project_root = Path.cwd()
+    else:
+        project_root = Path(project_root).resolve()
 
     checks = []
     checks.append(check_python_environment())

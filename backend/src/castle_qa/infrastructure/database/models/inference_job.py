@@ -63,7 +63,7 @@ class InferenceJobORM(Base):
     )
 
     # Parameters passed to the GPU worker
-    payload: Mapped[dict[str, str | int | float]] = (
+    payload: Mapped[dict[str, object]] = (
         mapped_column(
             "payload_json",
             JSON,

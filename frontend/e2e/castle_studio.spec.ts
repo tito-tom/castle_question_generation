@@ -1,4 +1,4 @@
-import { test, expect, Page, Download } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -68,9 +68,10 @@ test.describe.serial('CASTLE QA Studio — Laptop E2E Test Suite (Tests A to K)'
     await expect(page.locator('[data-testid="open-local-video-btn"]')).toBeVisible();
 
     // Verify navigation tabs
-    await expect(page.getByRole('button', { name: 'Observable Events' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Grounded Video QA' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Whodunnit Review' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Video Understanding' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Generate Questions' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Grounded Video QA' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Whodunnit Review' })).toHaveCount(0);
 
     // No uncaught runtime exceptions
     expect(uncaughtErrors.length).toBe(0);
@@ -333,7 +334,7 @@ test.describe.serial('CASTLE QA Studio — Laptop E2E Test Suite (Tests A to K)'
     await expect(firstSourceTime).toBeVisible();
     await expect(firstSourceTime).toContainText('Source:');
 
-    // Strengthened assertions: Timeline Copy and Download actions
+    // Summary and individual event copying contain only the requested text.
     // 1. Copy Summary
     const copySummaryBtn = page.locator('[data-testid="copy-summary-btn"]');
     await expect(copySummaryBtn).toBeVisible();
@@ -342,279 +343,80 @@ test.describe.serial('CASTLE QA Studio — Laptop E2E Test Suite (Tests A to K)'
     const summaryClipText = await page.evaluate(() => navigator.clipboard.readText());
     expect(summaryClipText.length).toBeGreaterThan(10);
 
-    // 2. Copy Events
-    const copyEventsBtn = page.locator('[data-testid="copy-events-btn"]');
-    await expect(copyEventsBtn).toBeVisible();
-    await copyEventsBtn.click();
-    await expect(copyEventsBtn).toContainText('Copied Events');
-    const eventsClipText = await page.evaluate(() => navigator.clipboard.readText());
-    expect(eventsClipText).toContain('[Event 1]');
-
-    // 3. Copy Analysis JSON
-    const copyJsonBtn = page.locator('[data-testid="copy-analysis-json-btn"]');
-    await expect(copyJsonBtn).toBeVisible();
-    await copyJsonBtn.click();
-    await expect(copyJsonBtn).toContainText('Copied JSON');
-    const jsonClipText = await page.evaluate(() => navigator.clipboard.readText());
-    const parsedClipJson = JSON.parse(jsonClipText);
-    expect(parsedClipJson.analysis_id).toBeDefined();
-    expect(parsedClipJson.is_mock).toBe(true);
-
-    // 4. Download Analysis JSON
-    const downloadJsonPromise = page.waitForEvent('download');
-    await page.locator('[data-testid="download-analysis-json-btn"]').click();
-    const analysisDownload = await downloadJsonPromise;
-    const downloadPath = await analysisDownload.path();
-    expect(downloadPath).toBeTruthy();
-    if (downloadPath) {
-      const downloadedContent = fs.readFileSync(downloadPath, 'utf8');
-      const downloadedJson = JSON.parse(downloadedContent);
-      expect(downloadedJson.analysis_id).toBeDefined();
-      expect(downloadedJson.is_mock).toBe(true);
-      expect(downloadedJson.events).toBeInstanceOf(Array);
-    }
+    const eventDescription = await page.locator('[data-testid="event-description-0"]').textContent();
+    const copyEventButton = page.locator('[data-testid="copy-event-0"]');
+    await copyEventButton.click();
+    await expect(copyEventButton).toContainText('Copied');
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(eventDescription);
+    await expect(page.getByRole('button', { name: 'Copy Events' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Copy JSON' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Download JSON' })).toHaveCount(0);
   });
 
   // --------------------------------------------------------------------------
-  // Test G — Grounded QA Panel
-  // --------------------------------------------------------------------------
-  test('Test G — Grounded QA with observable queries, heuristic confidence badge, and unanswerable query', async () => {
-    // Switch to Grounded QA tab
-    await page.getByRole('button', { name: 'Grounded Video QA' }).click();
-
-    const qaInput = page.locator('[data-testid="grounded-qa-input"]');
-    const askBtn = page.locator('[data-testid="grounded-qa-ask-btn"]');
-    await expect(qaInput).toBeVisible();
-
-    // 1. Observable action query matching mock video events (kettle / cup)
-    await qaInput.fill('Who picks up the kettle?');
-    await askBtn.click();
-
-    // Verify answer item appears
-    const answerItems = page.locator('[data-testid="grounded-qa-answer-item"]');
-    await expect(answerItems.first()).toBeVisible({ timeout: 15000 });
-
-    // Assert Mock Output badge is present
-    const mockBadge = answerItems.first().locator('[data-testid="qa-mock-badge"]');
-    await expect(mockBadge).toBeVisible();
-    await expect(mockBadge).toContainText('Mock Output');
-
-    // Assert heuristic confidence score badge (not a calibrated probability)
-    const confidenceBadge = answerItems.first().locator('[data-testid="qa-confidence-badge"]');
-    await expect(confidenceBadge).toBeVisible();
-    await expect(confidenceBadge).toContainText('Score:');
-
-    // Assert status is Evidence-Supported Candidate
-    const statusBadge = answerItems.first().locator('[data-testid="qa-status-badge"]');
-    await expect(statusBadge).toContainText('Evidence-Supported Candidate');
-
-    // 2. Observable timestamp query
-    await qaInput.fill('When did someone pour water into a cup?');
-    await askBtn.click();
-    await expect(answerItems).toHaveCount(2, { timeout: 15000 });
-
-    // 3. Unsupported / unanswerable query
-    await qaInput.fill('What is the weather outside the building?');
-    await askBtn.click();
-    await expect(answerItems).toHaveCount(3, { timeout: 15000 });
-
-    // The unanswerable query (newest at top) should show Uncertain / Unsupported
-    const unanswerableStatus = answerItems.first().locator('[data-testid="qa-status-badge"]');
-    await expect(unanswerableStatus).toContainText('Uncertain / Unsupported');
-
-    // Strengthened assertions: QA Copy and Download actions
-    // 1. Copy single answer
-    const copyAnswer0 = page.locator('[data-testid="copy-answer-btn-0"]');
-    await expect(copyAnswer0).toBeVisible();
-    await copyAnswer0.click();
-    const answerClipText = await page.evaluate(() => navigator.clipboard.readText());
-    expect(answerClipText.length).toBeGreaterThan(5);
-
-    // 2. Copy all QA
-    const copyAllBtn = page.locator('[data-testid="copy-all-qa-btn"]');
-    await expect(copyAllBtn).toBeVisible();
-    await copyAllBtn.click();
-    await expect(copyAllBtn).toContainText('Copied All');
-    const allQaClipText = await page.evaluate(() => navigator.clipboard.readText());
-    expect(allQaClipText).toContain('Q:');
-
-    // 3. Download QA JSON
-    const downloadQaPromise = page.waitForEvent('download');
-    await page.locator('[data-testid="download-qa-json-btn"]').click();
-    const qaDownload = await downloadQaPromise;
-    const qaPath = await qaDownload.path();
-    expect(qaPath).toBeTruthy();
-    if (qaPath) {
-      const qaContent = fs.readFileSync(qaPath, 'utf8');
-      const qaParsed = JSON.parse(qaContent);
-      expect(qaParsed).toBeInstanceOf(Array);
-      expect(qaParsed.length).toBe(3);
-      expect(qaParsed[0].question).toBeDefined();
-    }
+  // Test G - The result navigation exposes exactly the two intended tabs.
+  test('Test G - Results show only Video Understanding and Generate Questions', async () => {
+    const resultTabs = page.locator('[data-testid="results-tab-navigation"] button');
+    await expect(resultTabs).toHaveCount(2);
+    await expect(page.locator('[data-testid="grounded-qa-input"]')).toHaveCount(0);
+    await expect(page.getByText('Whodunnit Review Workspace')).toHaveCount(0);
+    await expect(page.locator('[data-testid="open-whodunnit-export-btn"]')).toHaveCount(0);
   });
 
-  // --------------------------------------------------------------------------
-  // Test H — Automatic QA Candidate Generation
-  // --------------------------------------------------------------------------
-  test('Test H — Generate Questions submits job, completes, and alerts review workspace', async () => {
-    const generateBtn = page.locator('[data-testid="trigger-generate-questions-btn"]');
-    await expect(generateBtn).toBeVisible();
-    await expect(generateBtn).toBeEnabled();
+  // Test H - Criteria reach the rule-based question generator.
+  test('Test H - Criteria shape generated question wording', async () => {
+    await page.getByRole('button', { name: 'Generate Questions' }).click();
+    const criteria = 'Focus on the kettle. Include timestamps in each question.';
+    await page.locator('[data-testid="criteria-textarea"]').fill(criteria);
 
-    // Click generate questions
-    await generateBtn.click();
+    const requestPromise = page.waitForRequest((request) =>
+      request.url().includes('/jobs/question-generations') && request.method() === 'POST',
+    );
+    await page.locator('[data-testid="generate-questions-button"]').click();
+    const request = await requestPromise;
+    expect(JSON.parse(request.postData() || '{}').criteria_text).toBe(criteria);
 
-    // When question generation finishes, the workspace transitions to Whodunnit Review
-    const reviewMockBanner = page.locator('[data-testid="review-mock-banner"]');
-    await expect(reviewMockBanner).toBeVisible({ timeout: 35000 });
-    await expect(page.getByText('Whodunnit Review Workspace')).toBeVisible();
+    await expect(page.locator('[data-testid="question-generation-mode"]')).toHaveText('Rule-based template generation', { timeout: 35000 });
+    await expect(page.locator('[data-testid="generated-question-card"]')).toHaveCount(2);
+    await expect(page.locator('[data-testid="generated-question-text"]').first()).toContainText('at 00:03.0?');
   });
 
-  // --------------------------------------------------------------------------
-  // Test I — Optional Annotation Review
-  // --------------------------------------------------------------------------
-  test('Test I — Whodunnit review: accept event, edit event, reject question, sync questions', async () => {
-    // Ensure on Whodunnit Review tab
-    await page.getByRole('button', { name: 'Whodunnit Review' }).click();
+  // Test I - Edits copy current wording and survive tab navigation.
+  test('Test I - Edited question remains available in the current session', async () => {
+    const editText = 'Who collects the kettle at 00:03?';
+    await page.locator('[data-testid="edit-question-button-0"]').click();
+    await page.locator('[data-testid="edit-question-0"]').fill(editText);
+    await page.locator('[data-testid="save-question-0"]').click();
+    await page.locator('[data-testid="copy-question-button-0"]').click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(editText);
 
-    // Verify review mock banner
-    const reviewMockBanner = page.locator('[data-testid="review-mock-banner"]');
-    await expect(reviewMockBanner).toBeVisible();
-    await expect(reviewMockBanner).toContainText('MOCK REVIEW DATA — SIMULATED CANDIDATES');
-
-    // 1. If newly generated questions alert is present, sync them
-    const syncAlert = page.locator('[data-testid="sync-questions-alert"]');
-    if (await syncAlert.isVisible()) {
-      const syncBtn = syncAlert.getByRole('button', { name: 'Sync Questions' });
-      await syncBtn.click();
-      await expect(syncAlert).not.toBeVisible({ timeout: 10000 });
-    }
-
-    // 2. Accept event 0
-    const acceptEvent0 = page.locator('[data-testid="accept-event-btn-0"]');
-    await expect(acceptEvent0).toBeVisible();
-    await acceptEvent0.click();
-
-    const event0Item = page.locator('[data-testid="event-review-item-0"]');
-    await expect(event0Item).toContainText('accepted');
-
-    // 3. Edit event 1
-    const editEvent1 = page.locator('[data-testid="edit-event-btn-1"]');
-    if (await editEvent1.isVisible()) {
-      await editEvent1.click();
-      const descInput = page.locator('[data-testid="event-review-item-1"] input[type="text"]').first();
-      await descInput.fill('Verified suspect moved coffee mug');
-      await page.getByRole('button', { name: 'Save Edits' }).click();
-
-      const event1Item = page.locator('[data-testid="event-review-item-1"]');
-      await expect(event1Item).toContainText('edited');
-    }
-
-    // 4. Questions tab review
-    const questionsTab = page.locator('[data-testid="review-tab-questions"]');
-    await questionsTab.click();
-
-    const rejectQuestion0 = page.locator('[data-testid="reject-question-btn-0"]');
-    if (await rejectQuestion0.isVisible()) {
-      await rejectQuestion0.click();
-      const question0Item = page.locator('[data-testid="question-review-item-0"]');
-      await expect(question0Item).toContainText('rejected');
-    }
+    await page.getByRole('button', { name: 'Video Understanding' }).click();
+    await page.getByRole('button', { name: 'Generate Questions' }).click();
+    await expect(page.locator('[data-testid="generated-question-text"]').first()).toHaveText(editText);
   });
 
-  // --------------------------------------------------------------------------
-  // Test J — Copy, Download and Export Verification
-  // --------------------------------------------------------------------------
-  test('Test J — Copy and download: Review JSON, CSV spreadsheet, and Whodunnit export package', async () => {
-    // 1. Copy Review JSON
-    const copyJsonBtn = page.locator('[data-testid="copy-review-json-btn"]');
-    await expect(copyJsonBtn).toBeVisible();
-    await copyJsonBtn.click();
-    await expect(copyJsonBtn).toContainText('Copied JSON');
-    const reviewClipText = await page.evaluate(() => navigator.clipboard.readText());
-    const reviewClipJson = JSON.parse(reviewClipText);
-    expect(reviewClipJson.review_id).toBeDefined();
-    expect(reviewClipJson.is_mock).toBe(true);
-
-    // 2. Download Review JSON
-    const downloadJsonPromise = page.waitForEvent('download');
-    await page.locator('[data-testid="download-review-json-btn"]').click();
-    const jsonDownload = await downloadJsonPromise;
-    const jsonPath = await jsonDownload.path();
-    expect(jsonPath).toBeTruthy();
-    if (jsonPath) {
-      const jsonContent = fs.readFileSync(jsonPath, 'utf8');
-      const parsed = JSON.parse(jsonContent);
-      expect(parsed.review_id).toBeDefined();
-      expect(parsed.is_mock).toBe(true);
-      expect(parsed.events).toBeInstanceOf(Array);
-    }
-
-    // 3. Download Review CSV
-    const downloadCsvPromise = page.waitForEvent('download');
-    await page.locator('[data-testid="download-review-csv-link"]').click();
-    const csvDownload = await downloadCsvPromise;
-    const csvPath = await csvDownload.path();
-    expect(csvPath).toBeTruthy();
-    if (csvPath) {
-      const csvContent = fs.readFileSync(csvPath, 'utf8');
-      expect(csvContent).toContain('item_type');
-      expect(csvContent).toContain('status');
-      expect(csvContent).toContain('mock');
-    }
-
-    // 4. Open Whodunnit Export Modal and download package
-    const openExportBtn = page.locator('[data-testid="open-whodunnit-export-btn"]');
-    await openExportBtn.click();
-
-    // Verify Whodunnit draft disclaimer
-    await expect(page.getByText('Configurable Adapter:')).toBeVisible();
-    await expect(page.getByText('Whodunnit draft criteria')).toBeVisible();
-
-    // Wait until payload preview finishes loading
-    await expect(page.getByText('Generating export package...')).not.toBeVisible({ timeout: 10000 });
-    await expect(page.locator('pre')).toBeVisible({ timeout: 10000 });
-
-    // Download JSON package from modal
-    const downloadPackagePromise = page.waitForEvent('download');
-    await page.getByRole('button', { name: 'Download JSON Package' }).click();
-    const pkgDownload = await downloadPackagePromise;
-    const pkgPath = await pkgDownload.path();
-    expect(pkgPath).toBeTruthy();
-    if (pkgPath) {
-      const pkgContent = fs.readFileSync(pkgPath, 'utf8');
-      const pkgJson = JSON.parse(pkgContent);
-      expect(pkgJson.metadata).toBeDefined();
-      expect(pkgJson.metadata.schema_version).toBeDefined();
-      expect(pkgJson.metadata.is_mock).toBe(true);
-      expect(pkgJson.metadata.mock_notice).toContain('MOCK');
-      if (pkgJson.events && pkgJson.events.length > 0) {
-        expect(pkgJson.events[0].human_verified).toBe(false);
-      }
-    }
-
-    // Close modal
-    await page.getByRole('button', { name: 'Close' }).click();
+  // Test J - JSON export and annotation-review controls are absent from results.
+  test('Test J - Simplified result controls', async () => {
+    await expect(page.getByRole('button', { name: 'Copy JSON' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Download JSON' })).toHaveCount(0);
+    await expect(page.locator('[data-testid="download-analysis-json-btn"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="copy-review-json-btn"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="download-review-csv-link"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="accept-event-btn-0"]')).toHaveCount(0);
   });
 
-  // --------------------------------------------------------------------------
-  // Test K — Explicit Saving to Library
-  // --------------------------------------------------------------------------
-  test('Test K — Explicit Save to Library marks session persistent', async () => {
-    const saveBtn = page.locator('[data-testid="save-review-persistent-btn"]');
+  // Test K - Temporary analyses still have an explicit retention control.
+  test('Test K - Explicit Save to Library marks analysis persistent', async () => {
+    await page.getByRole('button', { name: 'Video Understanding' }).click();
+    const saveBtn = page.locator('[data-testid="save-analysis-persistent-btn"]');
     if (await saveBtn.isVisible()) {
       await saveBtn.click();
-      const persistentBadge = page.locator('[data-testid="review-persistent-badge"]');
-      await expect(persistentBadge).toBeVisible({ timeout: 10000 });
-      await expect(persistentBadge).toContainText('Saved to Library');
+      await expect(page.locator('[data-testid="analysis-persistent-badge"]')).toBeVisible({ timeout: 10000 });
     } else {
-      // Already marked persistent
-      await expect(page.locator('[data-testid="review-persistent-badge"]')).toBeVisible();
+      await expect(page.locator('[data-testid="analysis-persistent-badge"]')).toBeVisible();
     }
   });
 });
-
-// --------------------------------------------------------------------------
 // Test L — Source Switching, Invalidation and State Isolation
 // --------------------------------------------------------------------------
 test.describe('CASTLE QA Studio — Test L: Source Switching & Lifecycle', () => {

@@ -63,6 +63,8 @@ playwright-report/
 frontend/test-results/
 frontend/playwright-report/
 frontend/.playwright/
+frontend/.playwright-e2e-*/
+frontend/.playwright-e2e-state.json
 
 # Scratch and temporary scripts
 scratch/

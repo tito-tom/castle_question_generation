@@ -34,6 +34,7 @@ class EventResponse(BaseModel):
     object_name: str | None = None
     target: str | None = None
     confidence: float | None = None
+    evidence_provenance: list[dict] | None = None
 
 
 class AnalysisDetailRepsonse(BaseModel):
@@ -63,4 +64,5 @@ class AnalysisDetailRepsonse(BaseModel):
     runtime_seconds: float | None = None
     device: str | None = None
     mock_notice: str | None = None
+    window_analysis_ids: list[str] | None = None
 

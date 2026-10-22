@@ -6,6 +6,7 @@ Verifies the complete pipeline:
 """
 
 from collections.abc import Iterator
+from contextlib import nullcontext
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -141,6 +142,9 @@ def e2e_env(tmp_path: Path):
     )
 
     class StubVideoService:
+        def video_lifecycle_guard(self, video_id: str):
+            return nullcontext()
+
         def get_video(self, video_id: str):
             if video_id == "lab_experiment":
                 return video_item

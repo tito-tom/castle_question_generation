@@ -1,6 +1,7 @@
 import {
   AnnotationReviewSession,
   InferenceJob,
+  QuestionGenerationResponse,
   VideoAnalysis,
   VideoItem,
   VideoQAAnswer,
@@ -158,6 +159,14 @@ export const api = {
     });
   },
 
+  async deleteTemporaryClip(videoId: string): Promise<{ video_id: string; media_deleted: boolean; deletion_pending: boolean }> {
+    const res = await fetch(`${API_BASE}/videos/temporary-clips/${videoId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
   async touchSession(sessionId: string, sessionToken?: string): Promise<{ session_id: string; expires_at: string; last_active_at: string; state: string }> {
     const headers: Record<string, string> = { ...getAuthHeaders() };
     const effectiveToken = sessionToken || activeSessionToken;
@@ -200,7 +209,8 @@ export const api = {
   async submitQuestionGeneration(
     analysisId: string,
     clipDurationSeconds: number,
-    maxQuestions = 5
+    maxQuestions = 5,
+    criteriaText = ''
   ): Promise<{ job_id: string; status: string }> {
     const res = await fetch(`${API_BASE}/jobs/question-generations`, {
       method: 'POST',
@@ -212,13 +222,29 @@ export const api = {
         analysis_id: analysisId,
         clip_duration_seconds: clipDurationSeconds,
         max_questions: maxQuestions,
+        criteria_text: criteriaText,
       }),
+    });
+    return handleResponse(res);
+  },
+
+  async getQuestionGeneration(generationId: string): Promise<QuestionGenerationResponse> {
+    const res = await fetch(`${API_BASE}/question-generations/${generationId}`, {
+      headers: getAuthHeaders(),
     });
     return handleResponse(res);
   },
 
   async getJobStatus(jobId: string): Promise<InferenceJob> {
     const res = await fetch(`${API_BASE}/jobs/${jobId}`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  async cancelJob(jobId: string): Promise<InferenceJob> {
+    const res = await fetch(`${API_BASE}/jobs/${jobId}`, {
+      method: 'DELETE',
       headers: getAuthHeaders(),
     });
     return handleResponse(res);
@@ -250,6 +276,20 @@ export const api = {
   async getAnalysis(analysisId: string): Promise<VideoAnalysis> {
     const res = await fetch(`${API_BASE}/analyses/${analysisId}`, {
       headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  async mergeWindowAnalyses(payload: {
+    analysis_ids: string[];
+    source_filename: string;
+    source_start_seconds: number;
+    source_end_seconds: number;
+  }): Promise<{ analysis_id: string; event_count: number; window_count: number; window_analysis_ids: string[] }> {
+    const res = await fetch(`${API_BASE}/analyses/merge-windows`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify(payload),
     });
     return handleResponse(res);
   },

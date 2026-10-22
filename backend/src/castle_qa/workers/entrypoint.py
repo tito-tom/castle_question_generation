@@ -40,6 +40,7 @@ from castle_qa.services.question_generation.template_question_generator import (
 from castle_qa.services.video_understanding.mock_video_understanding_service import (
     MockVideoUnderstandingService,
 )
+from castle_qa.services.video_service import VideoService
 from castle_qa.workers.job_worker import InferenceJobWorker
 from castle_qa.workers.worker_runner import WorkerRunner
 
@@ -245,6 +246,7 @@ def create_job_handler(
             criteria = QACriteria(
                 require_who=True,
                 max_questions=max_questions,
+                user_criteria=str(job.payload.get("criteria_text", "")),
             )
 
             result = question_workflow.generate(
@@ -263,7 +265,10 @@ def create_job_handler(
 
         elif job.job_type == JobType.VIDEO_UNDERSTANDING:
             video_path = Path(str(job.payload["video_path"]))
-            result = video_workflow.analyze_video(video_path=video_path)
+            result = video_workflow.analyze_video(
+                video_path=video_path,
+                source_metadata=job.payload.get("source_metadata") or {},
+            )
             return result.analysis_id
 
         else:
@@ -303,10 +308,25 @@ def run_worker(
         mock_models=mock_models,
     )
 
+    video_service = VideoService()
+
+    def cleanup_terminal_video_job(job: InferenceJob) -> None:
+        video_id = str(job.payload.get("video_id", ""))
+        if not video_id.startswith("clip_"):
+            return
+        session_id = str(job.payload.get("session_id", ""))
+        if job.status == JobStatus.COMPLETED and job.result_id and session_id:
+            video_service.session_service.register_resource(
+                session_id=session_id,
+                analysis_id=job.result_id,
+            )
+        video_service.delete_temporary_clip(video_id, job_repository=repository)
+
     worker = InferenceJobWorker(
         repository=repository,
         generate_and_save=handler,
         worker_id=worker_id,
+        on_terminal=cleanup_terminal_video_job,
     )
 
     runner = WorkerRunner(

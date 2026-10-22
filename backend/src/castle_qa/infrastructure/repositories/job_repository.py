@@ -366,7 +366,9 @@ class JobRepository:
         statement = (
             update(InferenceJobORM)
             .where(*conditions)
+            .where(func.coalesce(func.json_extract(InferenceJobORM.payload, "$.cancel_requested"), 0) == 0)
             .values(
+                payload=func.json_remove(InferenceJobORM.payload, "$.criteria_text"),
                 status=JobStatus.COMPLETED.value,
                 finished_at=self._utc_now(),
                 result_id=result_id,
@@ -376,8 +378,33 @@ class JobRepository:
 
         with self._sessions.begin() as session:
             result = session.execute(statement)
-
             return result.rowcount == 1
+
+    def request_cancel(self, job_id: str) -> InferenceJob | None:
+        """Cancel queued work or request safe cancellation after a running worker releases media."""
+        self._validate_job_id(job_id)
+        with self._sessions.begin() as session:
+            record = session.get(InferenceJobORM, job_id)
+            if record is None:
+                return None
+            if record.status == JobStatus.QUEUED.value:
+                payload = dict(record.payload or {})
+                payload.pop("criteria_text", None)
+                record.payload = payload
+                record.status = JobStatus.FAILED.value
+                record.finished_at = self._utc_now()
+                record.error_message = "Inference job cancelled before processing"
+            elif record.status == JobStatus.RUNNING.value:
+                payload = dict(record.payload or {})
+                payload["cancel_requested"] = True
+                record.payload = payload
+            session.flush()
+            return self._to_domain(record)
+
+    def is_cancel_requested(self, job_id: str) -> bool:
+        with self._sessions() as session:
+            record = session.get(InferenceJobORM, job_id)
+            return bool(record and (record.payload or {}).get("cancel_requested"))
 
     def mark_failed(
         self,
@@ -407,6 +434,7 @@ class JobRepository:
             update(InferenceJobORM)
             .where(*conditions)
             .values(
+                payload=func.json_remove(InferenceJobORM.payload, "$.criteria_text"),
                 status=JobStatus.FAILED.value,
                 finished_at=self._utc_now(),
                 result_id=None,
@@ -416,7 +444,6 @@ class JobRepository:
 
         with self._sessions.begin() as session:
             result = session.execute(statement)
-
             return result.rowcount == 1
 
     def recover_stale_jobs(
@@ -481,7 +508,17 @@ class JobRepository:
             ).all()
 
             for record in stale_records:
-                if record.attempt_count >= max_attempts:
+                if (record.payload or {}).get("cancel_requested"):
+                    payload = dict(record.payload or {})
+                    payload.pop("criteria_text", None)
+                    record.payload = payload
+                    record.status = JobStatus.FAILED.value
+                    record.finished_at = current_iso
+                    record.error_message = "Inference job cancelled after worker stopped"
+                elif record.attempt_count >= max_attempts:
+                    payload = dict(record.payload or {})
+                    payload.pop("criteria_text", None)
+                    record.payload = payload
                     record.status = JobStatus.FAILED.value
                     record.finished_at = current_iso
                     record.error_message = (

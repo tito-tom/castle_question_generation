@@ -22,6 +22,13 @@ class TemplateQuestionGenerator(QuestionGenerationService):
 
         candidates = []
         seen = set()
+        criteria_terms = self._criteria_terms(criteria.user_criteria)
+        include_timestamps = bool(re.search(
+            r"(?:include|add|show|put).{0,30}(?:time|timestamp)|(?:time|timestamp).{0,30}(?:each|every|question)",
+            criteria.user_criteria,
+            flags=re.IGNORECASE,
+        ))
+        eligible_events = []
 
         for index, event in enumerate(analysis.events):
 
@@ -54,6 +61,22 @@ class TemplateQuestionGenerator(QuestionGenerationService):
 
             seen.add(normalized)
 
+            event_text = " ".join(filter(None, (
+                event.description,
+                event.actor,
+                event.action,
+                event.object_name,
+                event.target,
+            )))
+            relevance = len(criteria_terms & self._criteria_terms(event_text))
+            if include_timestamps:
+                timestamp = (
+                    getattr(event, "source_start_seconds", None)
+                    if getattr(event, "source_start_seconds", None) is not None
+                    else event.start_seconds
+                )
+                question = f"{question[:-1]} at {self._format_timestamp(timestamp)}?"
+
             candidate = QuestionCandidate(
                 question=question,
                 answer=None,
@@ -66,12 +89,32 @@ class TemplateQuestionGenerator(QuestionGenerationService):
                 ),
             )
 
-            candidates.append(candidate)
+            eligible_events.append((relevance, index, candidate))
 
-            if len(candidates) >= criteria.max_questions:
-                break
+        eligible_events.sort(key=lambda item: (-item[0], item[1]))
+        candidates = [item[2] for item in eligible_events[:criteria.max_questions]]
 
         return candidates
+
+    @staticmethod
+    def _criteria_terms(text: str) -> set[str]:
+        stop_words = {
+            "a", "an", "and", "are", "about", "ask", "at", "be", "by",
+            "each", "every", "for", "from", "in", "include", "make", "of",
+            "on", "or", "question", "questions", "the", "this", "to", "use",
+            "video", "who", "with",
+        }
+        return {
+            term for term in re.findall(r"[a-z0-9]+", text.casefold())
+            if len(term) > 1 and term not in stop_words
+        }
+
+    @staticmethod
+    def _format_timestamp(seconds: float) -> str:
+        total_tenths = max(0, int(round(seconds * 10)))
+        minutes, remainder = divmod(total_tenths, 600)
+        whole_seconds, tenths = divmod(remainder, 10)
+        return f"{minutes:02d}:{whole_seconds:02d}.{tenths}"
 
     def _question_from_description(
             self,
@@ -116,5 +159,3 @@ class TemplateQuestionGenerator(QuestionGenerationService):
             return None
 
         return f"Who {predicate}?"
-
-        

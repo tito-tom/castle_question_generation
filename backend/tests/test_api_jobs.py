@@ -120,6 +120,22 @@ def test_submit_job_returns_202(api_context):
     assert saved.payload["generator"] == "qwen_local"
 
 
+def test_criteria_are_attached_to_queued_job_then_removed_on_cancel(api_context):
+    client, repository, _ = api_context
+    criteria = "Focus on evidence about the refrigerator."
+
+    response = submit_job(client, criteria_text=criteria)
+    job_id = response.json()["job_id"]
+    queued = repository.get(job_id)
+    assert queued is not None
+    assert queued.payload["criteria_text"] == criteria
+
+    cancelled = repository.request_cancel(job_id)
+    assert cancelled is not None
+    assert cancelled.status == JobStatus.FAILED
+    assert "criteria_text" not in cancelled.payload
+
+
 def test_get_job_status(api_context):
     client, _, _ = api_context
 
@@ -161,6 +177,7 @@ def test_missing_analysis_returns_404(api_context):
         {"clip_duration_seconds": 0},
         {"clip_duration_seconds": -10},
         {"max_questions": 21},
+        {"criteria_text": "x" * 16_385},
     ],
 )
 def test_invalid_job_request_returns_422(

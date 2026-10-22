@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from castle_qa.domain.event import Event
 
@@ -21,6 +21,11 @@ class VideoAnalysis:
     sampling_fps: Optional[float] = None
     runtime_seconds: Optional[float] = None
     device: Optional[str] = None
+    source_video_name: Optional[str] = None
+    source_start_seconds: Optional[float] = None
+    source_end_seconds: Optional[float] = None
+    temporal_alignment_status: Optional[str] = None
+    window_analysis_ids: list[str] | None = None
 
     @property
     def mock_notice(self) -> Optional[str]:
@@ -45,6 +50,11 @@ class VideoAnalysis:
             "sampling_fps": self.sampling_fps,
             "runtime_seconds": self.runtime_seconds,
             "device": self.device,
+            "source_video_name": self.source_video_name,
+            "source_start_seconds": self.source_start_seconds,
+            "source_end_seconds": self.source_end_seconds,
+            "temporal_alignment_status": self.temporal_alignment_status,
+            "window_analysis_ids": self.window_analysis_ids,
         }
 
     @classmethod
@@ -101,4 +111,9 @@ class VideoAnalysis:
             sampling_fps=(float(data["sampling_fps"]) if data.get("sampling_fps") is not None else None),
             runtime_seconds=(float(data["runtime_seconds"]) if data.get("runtime_seconds") is not None else None),
             device=data.get("device"),
+            source_video_name=data.get("source_video_name"),
+            source_start_seconds=(float(data["source_start_seconds"]) if data.get("source_start_seconds") is not None else None),
+            source_end_seconds=(float(data["source_end_seconds"]) if data.get("source_end_seconds") is not None else None),
+            temporal_alignment_status=data.get("temporal_alignment_status"),
+            window_analysis_ids=data.get("window_analysis_ids"),
         )

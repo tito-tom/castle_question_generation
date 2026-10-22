@@ -15,10 +15,15 @@ async def lifespan(app: FastAPI):
     """
     settings = APISettings.from_environment()
     runner = None
+    job_repository = None
     # Enable background cleanup runner if configured (disabled by default in test mode)
     if os.environ.get("ENABLE_BACKGROUND_CLEANUP", "0") == "1":
         from castle_qa.services.cleanup_runner import TemporaryStorageCleanupRunner
         from castle_qa.services.temporary_session_service import TemporarySessionService
+        from castle_qa.infrastructure.repositories.job_repository import JobRepository
+        job_repository = JobRepository(
+            database_path=settings.temporary_clip_directory.parent.parent / "jobs" / "jobs.sqlite3"
+        )
         session_svc = TemporarySessionService(
             base_dir=settings.temporary_clip_directory,
             retention_hours=settings.retention_hours,
@@ -26,6 +31,7 @@ async def lifespan(app: FastAPI):
         runner = TemporaryStorageCleanupRunner(
             session_service=session_svc,
             temporary_dir=settings.temporary_clip_directory,
+            job_repository=job_repository,
             interval_seconds=settings.cleanup_interval_seconds,
         )
         runner.start_background_loop()
@@ -34,6 +40,8 @@ async def lifespan(app: FastAPI):
 
     if runner:
         runner.stop_background_loop()
+    if job_repository:
+        job_repository.close()
 
 
 def create_app(enable_cleanup: bool = False) -> FastAPI:

@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class QACriteria:
@@ -6,6 +6,8 @@ class QACriteria:
     require_who: bool = True
     max_questions: int = 5
     min_event_seconds: float = 0.5
+    # Request-scoped guidance; repositories omit it from saved metadata.
+    user_criteria: str = field(default="", repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if self.max_questions < 1:

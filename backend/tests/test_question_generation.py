@@ -89,6 +89,26 @@ def test_evidence_timestamps():
     assert questions[0].evidence.end_seconds == 45.0
 
 
+def test_user_criteria_prioritize_matching_event_evidence():
+    questions = TemplateQuestionGenerator().generate(
+        sample_analysis(),
+        QACriteria(max_questions=1, user_criteria="Focus on the plate."),
+    )
+
+    assert len(questions) == 1
+    assert questions[0].source_event_index == 1
+    assert questions[0].question == "Who places a plate on the table?"
+
+
+def test_user_criteria_can_request_observed_event_timestamps():
+    questions = TemplateQuestionGenerator().generate(
+        sample_analysis(),
+        QACriteria(max_questions=1, user_criteria="Include timestamps in each question."),
+    )
+
+    assert questions[0].question == "Who retrieves a drink from the fridge at 00:40.0?"
+
+
 def test_validator_rejects_out_of_range_event():
 
     criteria = QACriteria()
@@ -114,7 +134,7 @@ def test_validator_rejects_out_of_range_event():
 def test_question_repository(tmp_path):
 
     analysis = sample_analysis()
-    criteria = QACriteria()
+    criteria = QACriteria(user_criteria="private criteria that must not be saved")
 
     questions = TemplateQuestionGenerator().generate(
         analysis,
@@ -134,3 +154,5 @@ def test_question_repository(tmp_path):
     assert len(saved["questions"]) == 2
     assert saved["questions"][0]["answer"] is None
     assert saved["questions"][0]["review_status"] == "pending"
+    assert "private criteria" not in output_path.read_text(encoding="utf-8")
+    assert "user_criteria" not in saved["criteria"]

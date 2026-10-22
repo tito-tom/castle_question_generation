@@ -1,5 +1,5 @@
 from dataclasses import asdict, dataclass
-from typing import Optional
+from typing import Any, Optional
 
 @dataclass
 class Event:
@@ -12,6 +12,7 @@ class Event:
     object_name: Optional[str] = None
     target: Optional[str] = None
     confidence: Optional[float] = None
+    evidence_provenance: list[dict[str, Any]] | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -40,4 +41,5 @@ class Event:
             object_name=object_name,
             target=data.get("target"),
             confidence=confidence,
+            evidence_provenance=data.get("evidence_provenance"),
         )

@@ -1,4 +1,5 @@
 from collections.abc import Iterator
+from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
@@ -19,12 +20,18 @@ from castle_qa.workers.job_worker import InferenceJobWorker
 
 
 class FakeVideoService:
+    def __init__(self, video_path: Path):
+        self.video_path = video_path
+
+    def video_lifecycle_guard(self, video_id: str):
+        return nullcontext()
+
     def get_video(self, video_id: str):
         if video_id == "vid_abc":
             return VideoItem(
                 video_id="vid_abc",
                 filename="vid_abc.mp4",
-                path=Path("data/videos/vid_abc.mp4"),
+                path=self.video_path,
                 duration_seconds=15.0,
                 size_bytes=2048,
                 created_at="2026-01-01T00:00:00Z",
@@ -49,10 +56,13 @@ def test_context(tmp_path: Path) -> Iterator[tuple[TestClient, JobRepository]]:
         engine.dispose()
 
     repository = JobRepository(db_path)
+    video_path = tmp_path / "videos" / "vid_abc.mp4"
+    video_path.parent.mkdir(parents=True)
+    video_path.write_bytes(b"video test fixture")
     app = create_app()
 
     app.dependency_overrides[jobs.get_job_repository] = lambda: repository
-    app.dependency_overrides[videos.get_video_service] = FakeVideoService
+    app.dependency_overrides[videos.get_video_service] = lambda: FakeVideoService(video_path)
 
     with TestClient(app) as client:
         yield client, repository

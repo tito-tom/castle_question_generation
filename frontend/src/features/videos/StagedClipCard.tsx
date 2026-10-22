@@ -42,6 +42,12 @@ export const StagedClipCard: React.FC<StagedClipCardProps> = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [previewError, setPreviewError] = useState(false);
+
+  React.useEffect(() => {
+    setPreviewError(false);
+    setIsPlaying(false);
+  }, [stagedClip.id, stagedClip.objectUrl]);
 
   const isSizeExceeded = stagedClip.sizeBytes > MAX_CLIP_SIZE_BYTES;
   const isDurationExceeded = stagedClip.durationSeconds > MAX_CLIP_DURATION_SECONDS;
@@ -176,12 +182,19 @@ export const StagedClipCard: React.FC<StagedClipCardProps> = ({
             ref={videoRef}
             src={stagedClip.objectUrl}
             controls
+            preload="metadata"
             data-testid="staged-clip-video-player"
             className="w-full h-full object-contain"
+            onError={() => setPreviewError(true)}
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}
             onEnded={() => setIsPlaying(false)}
           />
+          {previewError && (
+            <div className="absolute inset-0 bg-slate-950/90 flex items-center justify-center p-4 text-center text-xs text-rose-200" role="alert">
+              This staged video could not be decoded. Retry extraction or use Native FFmpeg / Import Existing Clip.
+            </div>
+          )}
         </div>
 
         {/* Metadata & Provenance */}
@@ -218,6 +231,18 @@ export const StagedClipCard: React.FC<StagedClipCardProps> = ({
                 <span>Target Duration:</span>
                 <span className="text-slate-300">{stagedClip.sourceDurationSeconds.toFixed(1)}s</span>
               </div>
+              {stagedClip.captureWallClockSeconds !== undefined && (
+                <div className="flex justify-between text-slate-400">
+                  <span>Capture wall time:</span>
+                  <span data-testid="staged-clip-capture-wall-time" className="text-slate-300">{stagedClip.captureWallClockSeconds.toFixed(2)}s</span>
+                </div>
+              )}
+              {stagedClip.capturePlaybackRate !== undefined && (
+                <div className="flex justify-between text-slate-400">
+                  <span>Capture playback rate:</span>
+                  <span data-testid="staged-clip-capture-playback-rate" className="text-slate-300">{stagedClip.capturePlaybackRate.toFixed(2)}x</span>
+                </div>
+              )}
               {Math.abs(stagedClip.durationDeltaSeconds) > 0.05 && (
                 <div className="flex justify-between text-amber-300">
                   <span>Duration Delta:</span>
