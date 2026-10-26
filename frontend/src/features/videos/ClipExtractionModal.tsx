@@ -28,6 +28,7 @@ import {
   formatTimestamp,
   formatDuration,
 } from './timestampUtils';
+import { MAX_UPLOADED_CLIP_BYTES, MAX_UPLOADED_CLIP_SECONDS } from './analysisWindows';
 import {
   generateNativeCommand,
   SupportedShell,
@@ -193,8 +194,14 @@ export const ClipExtractionModal: React.FC<ClipExtractionModalProps> = ({
       setImportError('Selected file is empty (0 bytes).');
       return;
     }
+    if (file.size > MAX_UPLOADED_CLIP_BYTES) {
+      setImportError('Selected clip exceeds the 1 GB upload limit.');
+      return;
+    }
 
     if (importedPreviewUrl) URL.revokeObjectURL(importedPreviewUrl);
+    setImportedDuration(0);
+    setImportError(null);
 
     try {
       const url = URL.createObjectURL(file);
@@ -206,16 +213,25 @@ export const ClipExtractionModal: React.FC<ClipExtractionModalProps> = ({
         .then((measuredDur) => {
           if (measuredDur > 0) {
             setImportedDuration(measuredDur);
+            setImportError(
+              measuredDur > MAX_UPLOADED_CLIP_SECONDS
+                ? 'Selected clip exceeds the 10-minute analysis limit.'
+                : Math.abs(measuredDur - durationTarget) > 1.5
+                  ? 'Clip duration does not match the selected interval. Re-extract the clip and try again.'
+                  : null,
+            );
+          } else {
+            setImportError('Could not read the selected clip duration.');
           }
         })
-        .catch(() => {});
+        .catch(() => setImportError('Could not read the selected clip duration.'));
     } catch {
       setImportError('Could not decode imported media file.');
     }
   };
 
   const handleConfirmImport = (method: 'native_ffmpeg_assisted' | 'direct_import') => {
-    if (!importedFile) return;
+    if (!importedFile || !importedDuration || importError) return;
 
     const delta = importedDuration > 0 ? importedDuration - durationTarget : 0;
 
@@ -291,6 +307,14 @@ export const ClipExtractionModal: React.FC<ClipExtractionModalProps> = ({
       if (activeSourceIdRef.current !== capturingSourceId || controller.signal.aborted || !isOpen) {
         URL.revokeObjectURL(result.objectUrl);
         return;
+      }
+      if (result.file.size > MAX_UPLOADED_CLIP_BYTES) {
+        URL.revokeObjectURL(result.objectUrl);
+        throw new Error('Extracted clip exceeds the 1 GB upload limit.');
+      }
+      if (Math.abs(result.actualDurationSeconds - durationTarget) > 1.5) {
+        URL.revokeObjectURL(result.objectUrl);
+        throw new Error('Captured duration does not match the selected interval closely enough. Use frame-accurate FFmpeg extraction.');
       }
 
       if (capturedPreviewUrlRef.current && capturedPreviewUrlRef.current !== result.objectUrl) {
@@ -447,10 +471,7 @@ export const ClipExtractionModal: React.FC<ClipExtractionModalProps> = ({
                 <Info className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
                 <div className="space-y-1 leading-relaxed">
                   <p className="font-medium text-white">Recommended for Timestamp-Sensitive Annotations</p>
-                  <p className="text-slate-400">
-                    Run this command in your terminal to extract the clip locally using your computer&apos;s native FFmpeg.
-                    The original video stays on your drive. Once generated, drop the resulting file below to stage it!
-                  </p>
+                  <p className="text-slate-400">This frame-accurate FFmpeg command extracts one continuous clip. The original stays on your computer.</p>
                 </div>
               </div>
 
@@ -589,7 +610,7 @@ export const ClipExtractionModal: React.FC<ClipExtractionModalProps> = ({
                   Step 2: Stage Extracted Clip
                 </span>
                 <p className="text-[11px] text-slate-400">
-                  After running the command above, select or drop the generated file here to stage it for annotation.
+                  After running the command, select the extracted clip. CASTLE will upload and analyze that clip once.
                 </p>
 
                 <div
@@ -630,15 +651,20 @@ export const ClipExtractionModal: React.FC<ClipExtractionModalProps> = ({
                   )}
                 </div>
 
+                {importError && (
+                  <p role="alert" className="text-xs text-rose-300">{importError}</p>
+                )}
+
                 {importedFile && (
                   <button
                     type="button"
                     onClick={() => handleConfirmImport('native_ffmpeg_assisted')}
+                    disabled={!importedDuration || Boolean(importError)}
                     data-testid="confirm-stage-ffmpeg-btn"
-                    className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg shadow transition flex items-center justify-center space-x-1.5"
+                    className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg shadow transition flex items-center justify-center space-x-1.5"
                   >
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>Confirm & Stage Extracted Clip</span>
+                    <span>Analyze Extracted Clip</span>
                   </button>
                 )}
               </div>
@@ -651,10 +677,9 @@ export const ClipExtractionModal: React.FC<ClipExtractionModalProps> = ({
               <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-xl flex items-start space-x-2.5 text-slate-300">
                 <Info className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
                 <div className="space-y-1 leading-relaxed">
-                  <p className="font-medium text-white">Import an Already-Extracted Short Clip</p>
+                  <p className="font-medium text-white">Import an Already-Extracted Clip</p>
                   <p className="text-slate-400">
-                    If you have already trimmed a clip from this recording (e.g. using any external video editor or earlier FFmpeg run),
-                    import it directly. Its temporal alignment will be marked as <strong className="text-indigo-300">user-confirmed</strong>.
+                    Choose a clip from this recording. Its source interval must match the selection.
                   </p>
                 </div>
               </div>
@@ -684,7 +709,7 @@ export const ClipExtractionModal: React.FC<ClipExtractionModalProps> = ({
                   }}
                 />
                 <FileVideo className="w-8 h-8 text-indigo-400 mx-auto mb-2" />
-                <p className="text-xs font-medium text-slate-200">Drop your short video clip here, or click to browse</p>
+                <p className="text-xs font-medium text-slate-200">Drop the extracted clip here, or click to browse</p>
                 <p className="text-[11px] text-slate-500 mt-1">Supports MP4, WebM, MOV</p>
               </div>
 
@@ -724,11 +749,12 @@ export const ClipExtractionModal: React.FC<ClipExtractionModalProps> = ({
                   <button
                     type="button"
                     onClick={() => handleConfirmImport('direct_import')}
+                    disabled={!importedDuration || Boolean(importError)}
                     data-testid="confirm-direct-import-btn"
-                    className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg shadow transition flex items-center justify-center space-x-1.5"
+                    className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg shadow transition flex items-center justify-center space-x-1.5"
                   >
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>Stage Imported Clip</span>
+                    <span>Analyze Imported Clip</span>
                   </button>
                 </div>
               )}
@@ -762,15 +788,15 @@ export const ClipExtractionModal: React.FC<ClipExtractionModalProps> = ({
                 <div className="space-y-3">
                   {!isCapturing && !capturedFile && (
                     <>
-                      {durationTarget > 120 && (
+                      {durationTarget > MAX_UPLOADED_CLIP_SECONDS && (
                         <div className="bg-rose-950/40 border border-rose-800 p-3 rounded-lg text-rose-200" data-testid="capture-limit-warning">
-                          This {durationTarget.toFixed(1)} second interval exceeds the current 120 second Qwen limit. Choose a shorter interval; browser capture will not start.
+                          This interval exceeds the 10-minute analysis limit.
                         </div>
                       )}
                       <button
                         type="button"
                         onClick={handleStartCapture}
-                        disabled={durationTarget > 120}
+                        disabled={durationTarget > MAX_UPLOADED_CLIP_SECONDS}
                         data-testid="start-browser-capture-btn"
                         className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 disabled:text-slate-400 text-white text-xs font-bold rounded-xl shadow transition flex items-center justify-center space-x-2"
                       >
@@ -869,7 +895,7 @@ export const ClipExtractionModal: React.FC<ClipExtractionModalProps> = ({
                           className="flex-1 py-2 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-lg shadow transition flex items-center justify-center space-x-1.5"
                         >
                           <CheckCircle2 className="w-4 h-4" />
-                          <span>Stage Captured Clip</span>
+                          <span>Analyze Captured Clip</span>
                         </button>
 
                         <button

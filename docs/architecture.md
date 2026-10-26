@@ -5,7 +5,7 @@
 CASTLE QA Studio is an annotation assistance platform designed to extract, inspect, and evaluate event timelines and question-answering pairs from long video recordings (such as the CASTLE dataset).
 
 ### Core Design Principles
-1. **Local-First Privacy**: Large original recordings (e.g., 1-hour CASTLE recordings ~1.28 GB) remain strictly local on the annotator's machine. Only short, user-selected clips (<= 120 seconds, <= 200 MB) are uploaded to the backend server.
+1. **Local-First Privacy**: Original recordings remain local. One continuous user-selected clip (up to 600 seconds and 1 GB) is uploaded to the backend server for analysis.
 2. **Dual-Mode Inference Execution**: The system supports two execution paths:
    - `VIDEO_UNDERSTANDING_MODE=mock`: CPU-only deterministic simulation for local laptop development and fast CI testing.
    - `VIDEO_UNDERSTANDING_MODE=real`: Genuine GPU-accelerated inference using `Qwen/Qwen2.5-VL-7B-Instruct` on dedicated NVIDIA hardware.
@@ -59,7 +59,7 @@ flowchart TD
 
     %% Interactions
     Player --> ClipExt
-    ClipExt -- "Stream Upload (max 200MB)" --> SizeMW --> VidSvc
+    ClipExt -- "One clip upload (max 1GB)" --> SizeMW --> VidSvc
     VidSvc --> TempClips
     VidSvc --> Reservations
     Router --> Tracker --> Leases
@@ -118,7 +118,7 @@ flowchart TD
 
 ## 4. Dual Timestamp Architecture
 
-To guarantee accuracy between the short uploaded clip and the original 1-hour CASTLE recording, timestamps are tracked in dual coordinate spaces:
+To preserve the selected interval's source location, timestamps are tracked in dual coordinate spaces:
 
 ```
 Source Video (1 hour, 3600s):
@@ -133,7 +133,7 @@ Clip Timestamps:          10s                     15s
 Source Timestamps:        130s                    135s (offset + 120s)
 ```
 
-1. **Clip Relative**: Stored in analysis events as `start_seconds` and `end_seconds`. Used directly by `<video>` player in the browser.
+1. **Clip Relative**: Stored in analysis events as `start_seconds` and `end_seconds`. Used directly by `<video>` player in the browser. Real Qwen inference samples uniformly across the full clip at up to 64 frames to fit the model input budget; the clip itself is not split or shortened.
 2. **Source Relative**: Stored as `source_start_seconds` and `source_end_seconds`. Calculated via `source_start_seconds = clip_start_seconds + offset`. Used when exporting annotations for benchmark training.
 
 ---

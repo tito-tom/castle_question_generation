@@ -71,12 +71,12 @@ export const WindowedClipPreparationModal: React.FC<Props> = ({ isOpen, localVid
         }
         seen.add(index);
         if (file.size <= 0 || file.size > MAX_UPLOADED_CLIP_BYTES) {
-          errors.push(`${file.name}: each uploaded window must be between 1 byte and 200 MB.`);
+          errors.push(`${file.name}: each uploaded window must be between 1 byte and 1 GB.`);
           continue;
         }
         const duration = await measureVideoFileDuration(file);
         if (!duration || duration > MAX_UPLOADED_CLIP_SECONDS) {
-          errors.push(`${file.name}: could not read duration or it exceeds the 120 second clip limit.`);
+          errors.push(`${file.name}: could not read duration or it exceeds the 10-minute analysis limit.`);
           continue;
         }
         const expected = target.endSeconds - target.startSeconds;
@@ -206,7 +206,7 @@ export const WindowedClipPreparationModal: React.FC<Props> = ({ isOpen, localVid
               </div>
               {error && <p role="alert" className="mt-3 rounded-lg border border-rose-800/60 bg-rose-950/50 p-3 text-xs text-rose-200">{error}</p>}
             </div>
-            <div className="rounded-lg border border-slate-800 p-3 text-xs text-slate-400">Each upload remains limited to 120 seconds and 200 MB. Analysis runs sequentially with the backend’s configured worker; mock results are labeled in the review workspace.</div>
+            <div className="rounded-lg border border-slate-800 p-3 text-xs text-slate-400">Uploads are limited to 10 minutes and 1 GB.</div>
             <button onClick={prepare} disabled={checking || imported.length !== windows.length} className="w-full rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40">Prepare {windows.length} clips for analysis</button>
           </section>
         </div>

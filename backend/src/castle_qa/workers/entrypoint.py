@@ -210,6 +210,7 @@ def create_job_handler(
         video_service = LocalQwenVideoUnderstandingService(
             model_name=model_name,
             fps=float(os.getenv("VIDEO_FPS", "2.0")),
+            max_video_frames=int(os.getenv("VIDEO_MAX_FRAMES", "64")),
             max_new_tokens=int(os.getenv("MAX_NEW_TOKENS", "1024")),
             prompt_path=Path("prompts/video_understanding.txt"),
         )

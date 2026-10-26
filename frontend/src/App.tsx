@@ -22,9 +22,7 @@ import { useLocalVideo } from './features/videos/useLocalVideo';
 import { ClipSelectionPanel } from './features/videos/ClipSelectionPanel';
 import { ClipExtractionModal } from './features/videos/ClipExtractionModal';
 import { StagedClipCard } from './features/videos/StagedClipCard';
-import { WindowedClipPreparationModal } from './features/videos/WindowedClipPreparationModal';
-import { WindowedClipBatchCard, WindowTaskState } from './features/videos/WindowedClipBatchCard';
-import { getRetryableWindowIds } from './features/videos/analysisWindows';
+import { MAX_SOURCE_INTERVAL_SECONDS } from './features/videos/analysisWindows';
 import { TimelineView } from './features/video-understanding/TimelineView';
 import { QuestionGenerationWorkspace } from './features/question-generation/QuestionGenerationWorkspace';
 
@@ -45,12 +43,6 @@ export const App: React.FC = () => {
 
   // Staged extracted short clip & extraction modal state
   const [stagedClip, setStagedClip] = useState<StagedClipItem | null>(null);
-  const [stagedWindows, setStagedWindows] = useState<StagedClipItem[]>([]);
-  const [windowTaskStates, setWindowTaskStates] = useState<Record<string, WindowTaskState>>({});
-  const [windowProgressText, setWindowProgressText] = useState('');
-  const [windowBatchError, setWindowBatchError] = useState<string | null>(null);
-  const [isWindowAnalyzing, setIsWindowAnalyzing] = useState(false);
-  const [isWindowPreparationOpen, setIsWindowPreparationOpen] = useState(false);
   const [uploadedClipMetadata, setUploadedClipMetadata] = useState<(VideoItem & { is_temporary?: boolean; session_id?: string; session_token?: string }) | null>(null);
   const [isExtractionOpen, setIsExtractionOpen] = useState(false);
   const [extractionTargetInterval, setExtractionTargetInterval] = useState<{
@@ -69,7 +61,6 @@ export const App: React.FC = () => {
   const [clipAnalysisProgressText, setClipAnalysisProgressText] = useState<string>('');
   const [clipAnalysisError, setClipAnalysisError] = useState<string | null>(null);
   const activeClipJobRef = useRef<{ cancelled: boolean }>({ cancelled: false });
-  const activeWindowJobRef = useRef<{ cancelled: boolean; jobId: string | null }>({ cancelled: false, jobId: null });
 
   // Local-First video hook: keeps File in memory, creates/revokes object URLs, zero network upload
   const localVideoRef = useRef<LocalVideoItem | null>(null);
@@ -91,10 +82,6 @@ export const App: React.FC = () => {
     setClipUploadProgress(null);
     setClipAnalysisProgressText('');
     setClipAnalysisError(null);
-    activeWindowJobRef.current.cancelled = true;
-    setStagedWindows((prev) => { prev.forEach((clip) => URL.revokeObjectURL(clip.objectUrl)); return []; });
-    setWindowTaskStates({});
-    setWindowBatchError(null);
 
     // When a local video is chosen, switch active source to local immediately
     localVideoRef.current = item;
@@ -158,9 +145,6 @@ export const App: React.FC = () => {
     setClipUploadProgress(null);
     setClipAnalysisProgressText('');
     setClipAnalysisError(null);
-    activeWindowJobRef.current.cancelled = true;
-    setStagedWindows((prev) => { prev.forEach((clip) => URL.revokeObjectURL(clip.objectUrl)); return []; });
-    setWindowTaskStates({});
 
     if (stagedClip) URL.revokeObjectURL(stagedClip.objectUrl);
     setStagedClip(null);
@@ -203,9 +187,6 @@ export const App: React.FC = () => {
     setClipUploadProgress(null);
     setClipAnalysisProgressText('');
     setClipAnalysisError(null);
-    activeWindowJobRef.current.cancelled = true;
-    setStagedWindows((prev) => { prev.forEach((clip) => URL.revokeObjectURL(clip.objectUrl)); return []; });
-    setWindowTaskStates({});
 
     if (stagedClip) {
       URL.revokeObjectURL(stagedClip.objectUrl);
@@ -228,12 +209,9 @@ export const App: React.FC = () => {
 
   // Interval extraction handlers
   const handleOpenExtraction = (interval: { start: number; end: number; label?: string }) => {
+    if (interval.end - interval.start > MAX_SOURCE_INTERVAL_SECONDS) return;
     setExtractionTargetInterval(interval);
-    if (interval.end - interval.start > 120) {
-      setIsWindowPreparationOpen(true);
-    } else {
-      setIsExtractionOpen(true);
-    }
+    setIsExtractionOpen(true);
   };
 
   const handleClipStaged = (clip: StagedClipItem) => {
@@ -243,8 +221,6 @@ export const App: React.FC = () => {
     setClipUploadProgress(null);
     setClipAnalysisProgressText('');
     setClipAnalysisError(null);
-    setStagedWindows((prev) => { prev.forEach((item) => URL.revokeObjectURL(item.objectUrl)); return []; });
-    setWindowTaskStates({});
     setAnalysis(null);
     setUploadedClipMetadata(null);
 
@@ -252,43 +228,6 @@ export const App: React.FC = () => {
       URL.revokeObjectURL(stagedClip.objectUrl);
     }
     setStagedClip(clip);
-  };
-
-  const handleWindowClipsPrepared = (clips: StagedClipItem[]) => {
-    if (stagedClip) URL.revokeObjectURL(stagedClip.objectUrl);
-    setStagedClip(null);
-    setAnalysis(null);
-    setUploadedClipMetadata(null);
-    setStagedWindows(clips);
-    setWindowTaskStates(Object.fromEntries(clips.map((clip) => [clip.id, { status: 'ready' as const }])));
-    setWindowBatchError(null);
-    setWindowProgressText('Prepared locally; no video has been uploaded yet.');
-    setActiveInterval({
-      start: Math.min(...clips.map((clip) => clip.sourceStartSeconds)),
-      end: Math.max(...clips.map((clip) => clip.sourceEndSeconds)),
-    });
-  };
-
-  const handleClearWindowClips = () => {
-    if (isWindowAnalyzing) return;
-    stagedWindows.forEach((clip) => URL.revokeObjectURL(clip.objectUrl));
-    setStagedWindows([]);
-    setWindowTaskStates({});
-    setWindowBatchError(null);
-    setWindowProgressText('');
-  };
-
-  const handleCancelWindowAnalysis = async () => {
-    activeWindowJobRef.current.cancelled = true;
-    const jobId = activeWindowJobRef.current.jobId;
-    if (jobId) {
-      try {
-        await api.cancelJob(jobId);
-        setWindowProgressText('Cancellation requested. Waiting for the worker to release the temporary clip…');
-      } catch (err) {
-        setWindowBatchError(err instanceof Error ? err.message : 'Could not request cancellation.');
-      }
-    }
   };
 
   const handleClearStagedClip = () => {
@@ -305,9 +244,17 @@ export const App: React.FC = () => {
     setStagedClip(null);
   };
 
-  // Staged short-clip upload and Qwen video understanding
+  // Upload and analyze the one extracted interval clip.
   const handleAnalyzeStagedClip = async (clipToAnalyze: StagedClipItem) => {
     if (activeSourceType !== 'local' || !clipToAnalyze || isClipAnalyzing) return;
+    if (clipToAnalyze.durationSeconds > MAX_SOURCE_INTERVAL_SECONDS) {
+      setClipAnalysisError('Selected clip exceeds the 10-minute analysis limit.');
+      return;
+    }
+    if (clipToAnalyze.sizeBytes > 1024 * 1024 * 1024) {
+      setClipAnalysisError('Selected clip exceeds the 1 GB upload limit.');
+      return;
+    }
 
     // Invalidate any previous running poll
     activeClipJobRef.current.cancelled = true;
@@ -349,7 +296,7 @@ export const App: React.FC = () => {
       }
 
       setClipUploadProgress(null);
-      setClipAnalysisProgressText('Submitting Qwen job...');
+      setClipAnalysisProgressText('Submitting analysis...');
 
       // 2. Submit video understanding job
       const { job_id } = await api.submitVideoUnderstanding(uploadedClip.video_id, 2.0);
@@ -357,7 +304,7 @@ export const App: React.FC = () => {
 
       if (currentJob.cancelled) return;
 
-      setClipAnalysisProgressText('Qwen analyzing clip...');
+      setClipAnalysisProgressText('Analyzing selected clip...');
 
       // 3. Poll job until finished
       const finishedJob = await api.pollJobUntilFinished(job_id);
@@ -375,7 +322,7 @@ export const App: React.FC = () => {
         setActiveTab('understanding');
         setClipAnalysisProgressText('');
       } else if (finishedJob.status === 'failed') {
-        throw new Error(finishedJob.error_message || 'Qwen video understanding failed');
+        throw new Error(finishedJob.error_message || 'Video understanding failed');
       }
     } catch (err: any) {
       if (uploadedVideoId && !jobWasSubmitted) {
@@ -383,132 +330,13 @@ export const App: React.FC = () => {
       }
       if (!currentJob.cancelled) {
         console.error('Clip analysis failed', err);
-        setClipAnalysisError(err.message || 'Failed to analyze clip with Qwen');
+        setClipAnalysisError(err.message || 'Failed to analyze selected clip');
       }
     } finally {
       if (!currentJob.cancelled) {
         setIsClipAnalyzing(false);
         setClipUploadProgress(null);
       }
-    }
-  };
-
-  const handleAnalyzeWindowedInterval = async () => {
-    if (!localVideo || activeSourceType !== 'local' || stagedWindows.length === 0 || isWindowAnalyzing) return;
-    const run = { cancelled: false, jobId: null as string | null };
-    activeWindowJobRef.current = run;
-    setIsWindowAnalyzing(true);
-    setWindowBatchError(null);
-    const completedAnalysisIds: Record<string, string> = Object.fromEntries(
-      Object.entries(windowTaskStates)
-        .filter(([, state]) => state.status === 'completed' && state.analysisId)
-        .map(([id, state]) => [id, state.analysisId as string]),
-    );
-    let uploadedVideoId: string | null = null;
-    let jobWasSubmitted = false;
-    let activeWindowClipId: string | null = null;
-
-    try {
-      const retryableIds = new Set(getRetryableWindowIds(stagedWindows, completedAnalysisIds));
-      for (let index = 0; index < stagedWindows.length; index += 1) {
-        const clip = stagedWindows[index];
-        if (!retryableIds.has(clip.id)) continue;
-        activeWindowClipId = clip.id;
-        if (run.cancelled) break;
-        const windowLabel = `Window ${index + 1} of ${stagedWindows.length}`;
-        setWindowTaskStates((prev) => ({ ...prev, [clip.id]: { status: 'uploading' } }));
-        setWindowProgressText(`Uploading ${windowLabel}…`);
-
-        const uploaded = await api.uploadTemporaryClip(clip.file, {
-          sourceFilename: clip.sourceVideoName,
-          sourceVideoRef: clip.sourceVideoRef,
-          sourceStartSeconds: clip.sourceStartSeconds,
-          sourceEndSeconds: clip.sourceEndSeconds,
-          sourceDurationSeconds: clip.sourceDurationSeconds,
-          extractionMethod: clip.method,
-          alignmentStatus: clip.alignmentStatus,
-          userConfirmed: clip.userConfirmedAssociation,
-        }, (pct) => {
-          if (!run.cancelled) setWindowProgressText(`Uploading ${windowLabel} · ${pct}%`);
-        });
-        uploadedVideoId = uploaded.video_id;
-
-        // Even if cancellation arrived during upload, create a cancellable job so
-        // the backend can wait for any worker lease and clean up safely.
-        const { job_id: jobId } = await api.submitVideoUnderstanding(uploaded.video_id, 2.0);
-        jobWasSubmitted = true;
-        run.jobId = jobId;
-        activeWindowJobRef.current.jobId = jobId;
-        if (run.cancelled) await api.cancelJob(jobId);
-        setWindowTaskStates((prev) => ({ ...prev, [clip.id]: { status: 'processing' } }));
-        setWindowProgressText(`${run.cancelled ? 'Stopping' : `Processing ${windowLabel}`} · temporary clip will be deleted when the worker stops`);
-
-        const finished = await api.pollJobUntilFinished(jobId, 1200, () => {
-          if (!run.cancelled) setWindowProgressText(`Processing ${windowLabel} · waiting for mock/Qwen worker`);
-        });
-        run.jobId = null;
-        activeWindowJobRef.current.jobId = null;
-        if (finished.status !== 'completed' || !finished.result_id) {
-          const wasCancelled = run.cancelled || (finished.error_message || '').toLowerCase().includes('cancel');
-          setWindowTaskStates((prev) => ({
-            ...prev,
-            [clip.id]: { status: 'failed', error: wasCancelled ? 'Cancelled safely; retry will upload a fresh temporary clip.' : (finished.error_message || 'Window analysis failed. Retry will upload this local clip again.') },
-          }));
-          if (!wasCancelled) setWindowBatchError(finished.error_message || `${windowLabel} failed.`);
-          break;
-        }
-        // Load only after the job has reached a terminal state; its JSON result
-        // and source timing remain available after temporary media deletion.
-        await api.getAnalysis(finished.result_id);
-        completedAnalysisIds[clip.id] = finished.result_id;
-        activeWindowClipId = null;
-        uploadedVideoId = null;
-        jobWasSubmitted = false;
-        setWindowTaskStates((prev) => ({ ...prev, [clip.id]: { status: 'completed', analysisId: finished.result_id! } }));
-        setWindowProgressText(`${windowLabel} complete · temporary media cleanup finished`);
-        if (run.cancelled) break;
-      }
-
-      if (run.cancelled) {
-        setWindowProgressText('Cancelled. The active worker has stopped; its temporary clip was cleaned up. Completed windows are kept for a safe retry.');
-        return;
-      }
-
-      const allCompleted = stagedWindows.every((clip) => completedAnalysisIds[clip.id]);
-      if (!allCompleted) return;
-
-      setWindowProgressText('Merging source-time events and evidence…');
-      activeWindowClipId = null;
-      const merged = await api.mergeWindowAnalyses({
-        analysis_ids: stagedWindows.map((clip) => completedAnalysisIds[clip.id]),
-        source_filename: localVideo.filename,
-        source_start_seconds: Math.min(...stagedWindows.map((clip) => clip.sourceStartSeconds)),
-        source_end_seconds: Math.max(...stagedWindows.map((clip) => clip.sourceEndSeconds)),
-      });
-      const mergedAnalysis = await api.getAnalysis(merged.analysis_id);
-      setAnalysis(mergedAnalysis);
-      setUploadedClipMetadata(null);
-      setActiveTab('understanding');
-      setWindowProgressText(`Merged ${stagedWindows.length} windows into one source-time timeline. Temporary uploads deleted.`);
-      setWindowBatchError(null);
-    } catch (err) {
-      if (activeWindowClipId) {
-        setWindowTaskStates((prev) => ({
-          ...prev,
-          [activeWindowClipId as string]: {
-            status: 'failed',
-            error: err instanceof Error ? err.message : 'Window processing failed; retry will re-upload it.',
-          },
-        }));
-      }
-      if (uploadedVideoId && !jobWasSubmitted) {
-        await api.deleteTemporaryClip(uploadedVideoId).catch(() => undefined);
-      }
-      setWindowBatchError(err instanceof Error ? err.message : 'Long-interval analysis failed.');
-      setWindowProgressText('The completed windows are preserved. Retry failed windows or retry the merge.');
-    } finally {
-      activeWindowJobRef.current.jobId = null;
-      setIsWindowAnalyzing(false);
     }
   };
 
@@ -749,25 +577,12 @@ export const App: React.FC = () => {
                 setIsExtractionOpen(true);
               }}
               onClear={handleClearStagedClip}
-              onAnalyzeClip={handleAnalyzeStagedClip}
+              onAnalyze={() => handleAnalyzeStagedClip(stagedClip)}
               isAnalyzing={isClipAnalyzing}
               analysisProgressText={clipAnalysisProgressText}
               uploadProgress={clipUploadProgress}
               analysisError={clipAnalysisError}
               onRetryAnalysis={() => handleAnalyzeStagedClip(stagedClip)}
-            />
-          )}
-
-          {activeSourceType === 'local' && stagedWindows.length > 0 && (
-            <WindowedClipBatchCard
-              clips={stagedWindows}
-              states={windowTaskStates}
-              isAnalyzing={isWindowAnalyzing}
-              progressText={windowBatchError || windowProgressText}
-              onAnalyze={handleAnalyzeWindowedInterval}
-              onCancel={handleCancelWindowAnalysis}
-              onClear={handleClearWindowClips}
-              batchError={windowBatchError}
             />
           )}
 
@@ -810,7 +625,7 @@ export const App: React.FC = () => {
 
               <div className="text-[11px] text-slate-400 bg-slate-950/60 border border-slate-800/80 rounded-lg p-2.5 flex items-center justify-between">
                 <span>
-                  Original video remains on your computer. Stage an interval above and click &quot;Analyze Clip with Qwen&quot; to run understanding on a short clip.
+                  Original video stays on your computer. Select an interval up to 10 minutes; CASTLE extracts and analyzes that clip.
                 </span>
                 <span className="text-emerald-400 font-mono text-[10px] shrink-0 ml-2 font-semibold">
                   Local-First
@@ -924,15 +739,6 @@ export const App: React.FC = () => {
             }
           }
           onClipStaged={handleClipStaged}
-        />
-      )}
-      {localVideo && isWindowPreparationOpen && extractionTargetInterval && (
-        <WindowedClipPreparationModal
-          isOpen={isWindowPreparationOpen}
-          onClose={() => setIsWindowPreparationOpen(false)}
-          localVideo={localVideo}
-          interval={extractionTargetInterval}
-          onClipsPrepared={handleWindowClipsPrepared}
         />
       )}
     </div>

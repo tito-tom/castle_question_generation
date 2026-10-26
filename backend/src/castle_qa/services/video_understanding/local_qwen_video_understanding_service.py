@@ -16,7 +16,8 @@ class LocalQwenVideoUnderstandingService(
         model_name: str,
         fps: float,
         max_new_tokens: int,
-        prompt_path: Path
+        prompt_path: Path,
+        max_video_frames: int = 64,
     ):
         # Lazy import allow to run without GPU dependencies.
         import torch
@@ -41,6 +42,7 @@ class LocalQwenVideoUnderstandingService(
 
         self._model_name = model_name
         self._fps = fps
+        self._max_video_frames = max_video_frames
         self._max_new_tokens = (
             max_new_tokens
         )
@@ -83,6 +85,18 @@ class LocalQwenVideoUnderstandingService(
 
     def analyze(self, clip: ClipResult) -> VideoAnalysis:
 
+        if clip.duration_seconds <= 0:
+            raise ValueError("Cannot analyze a video with an invalid duration.")
+        if clip.duration_seconds > 600:
+            raise ValueError("Video duration exceeds the 600-second analysis limit.")
+        if self._fps <= 0 or self._max_video_frames <= 0:
+            raise ValueError("Video sampling settings must be positive.")
+
+        # Sample uniformly across the full clip while keeping Qwen's video input
+        # within a bounded frame/token budget. This keeps one analysis request
+        # for the selected clip and does not cut or split its timeline.
+        sampling_fps = min(self._fps, self._max_video_frames / clip.duration_seconds)
+
         messages = [
             {
                 "role": "user",
@@ -104,30 +118,32 @@ class LocalQwenVideoUnderstandingService(
         self._torch.cuda.reset_peak_memory_stats()
         start_time = time.perf_counter()
         
-        inputs = (
-            self._processor.apply_chat_template(
-                messages, 
-                fps = self._fps,
-                add_generation_prompt = True,
-                tokenize = True,
-                return_dict = True,
-                return_tensors = "pt",
-            )
-        )
-
-        inputs = inputs.to(self._model.device)
-
-        with self._torch.inference_mode():
-
-            output_ids = (
-                self._model.generate(
-                    **inputs,
-                    max_new_tokens=(
-                        self._max_new_tokens
-                    ),
-                    do_sample=False,
+        try:
+            inputs = (
+                self._processor.apply_chat_template(
+                    messages,
+                    fps=sampling_fps,
+                    add_generation_prompt=True,
+                    tokenize=True,
+                    return_dict=True,
+                    return_tensors="pt",
                 )
             )
+            inputs = inputs.to(self._model.device)
+
+            with self._torch.inference_mode():
+                output_ids = self._model.generate(
+                    **inputs,
+                    max_new_tokens=self._max_new_tokens,
+                    do_sample=False,
+                )
+        except RuntimeError as error:
+            message = str(error).lower()
+            if any(marker in message for marker in ("out of memory", "sequence length", "context length", "maximum context")):
+                raise RuntimeError(
+                    f"Qwen could not process the complete {clip.duration_seconds:.1f}-second clip within the configured model or GPU limits. The clip was not split or truncated."
+                ) from error
+            raise
 
         generated_ids = [
             output[
@@ -163,7 +179,7 @@ class LocalQwenVideoUnderstandingService(
 
         data["is_mock"] = False
         data["inference_mode"] = "real"
-        data["sampling_fps"] = self._fps
+        data["sampling_fps"] = sampling_fps
         data["runtime_seconds"] = elapsed
         data["device"] = f"cuda:{self._torch.cuda.current_device()}" if self._torch.cuda.is_available() else "cpu"
 

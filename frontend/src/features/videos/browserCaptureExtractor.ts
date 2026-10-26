@@ -223,13 +223,13 @@ export async function extractClipWithBrowserCapture(
   const targetDuration = Math.max(0.1, endSeconds - startSeconds);
   const mimeType = getPreferredMimeType();
   if (!mimeType) throw new Error('This browser cannot record a supported MP4 or WebM format. Use Native FFmpeg or Import Existing Clip.');
-  if (targetDuration > 120) throw new Error('This interval exceeds the current 120-second Qwen limit. Select a shorter interval or use Import Existing Clip for local processing.');
+  if (targetDuration > 600) throw new Error('Selected interval exceeds the 10-minute analysis limit.');
   const baseName = sourceFile.name.replace(/\.[^/.]+$/, '');
   let outputFilename = '';
 
   const sourceObjectUrl = URL.createObjectURL(sourceFile);
   const video = document.createElement('video');
-  video.muted = true;
+  video.muted = false;
   video.playsInline = true;
   video.preload = 'auto';
 

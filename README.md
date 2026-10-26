@@ -8,7 +8,7 @@ CASTLE QA Studio is an annotation assistance platform designed to extract, inspe
 
 ## 1. System Capabilities
 
-- **Local-First Privacy**: Original 1-hour CASTLE recordings (~1.28 GB) remain on the annotator's computer. Only short, user-selected clips (<= 120s, <= 200MB) are uploaded to the backend.
+- **Local-First Privacy**: Original CASTLE recordings remain on the user's computer. One selected interval clip (up to 600s and 1 GB) is uploaded for analysis.
 - **Qwen2.5-VL Video Understanding**: Extracts chronological observable events with dual timestamp intervals (`start_seconds`, `end_seconds` and source-relative `source_start_seconds`, `source_end_seconds`), actor identification, actions, objects, targets, and concise factual summaries.
 - **Grounded Video Question Answering (Video QA)**: Annotators ask natural language questions about video content and receive answers grounded with:
   - Temporal video evidence intervals.

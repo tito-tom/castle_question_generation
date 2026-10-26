@@ -14,7 +14,7 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
     before Starlette spools them to temporary disk storage.
     """
 
-    def __init__(self, app, max_request_size_bytes: int = 210 * 1024 * 1024):
+    def __init__(self, app, max_request_size_bytes: int = 1040 * 1024 * 1024):
         super().__init__(app)
         self.max_request_size_bytes = max_request_size_bytes
         self.max_mb = max_request_size_bytes // (1024 * 1024)

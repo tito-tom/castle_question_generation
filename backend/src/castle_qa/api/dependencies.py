@@ -3,6 +3,7 @@ Central dependency injection providers for the CASTLE QA Studio FastAPI API.
 """
 
 from castle_qa.application.analysis_workflow import AnalysisWorkflow
+from castle_qa.config.api_settings import APISettings
 from castle_qa.application.question_workflow import QuestionWorkflow
 from castle_qa.config.api_settings import resolve_data_directory
 from castle_qa.infrastructure.repositories.annotation_repository import AnnotationRepository
@@ -55,7 +56,13 @@ def get_question_workflow() -> QuestionWorkflow:
 
 def get_video_service() -> VideoService:
     """Dependency provider for VideoService."""
-    return VideoService()
+    settings = APISettings.from_environment()
+    return VideoService(
+        max_clip_upload_size=settings.max_clip_size_bytes,
+        max_clip_duration_seconds=settings.max_clip_duration_seconds,
+        max_concurrent_uploads=settings.max_concurrent_uploads,
+        max_aggregate_temporary_storage=settings.max_aggregate_temporary_storage_bytes,
+    )
 
 
 def get_annotation_repository() -> AnnotationRepository:

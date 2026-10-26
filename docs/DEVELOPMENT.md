@@ -150,7 +150,7 @@ Stop-Process -Id <PID> -Force
 | :--- | :--- | :--- |
 | `FileNotFoundError: ffmpeg` | FFmpeg is not installed or not on `PATH` | Install FFmpeg and add the `bin/` directory to your system environment variables. |
 | `TypeError: Object of type MagicMock is not JSON serializable` | Mocking `datetime` globally in tests | Pass a custom `now_fn` to `TemporarySessionService` rather than patching standard library modules. |
-| `413 Request Entity Too Large` during upload | Clip exceeds configured maximum upload size | Keep uploaded clips under 200 MB, or adjust `CASTLE_MAX_UPLOAD_SIZE` in the environment. |
+| `413 Request Entity Too Large` during upload | Clip exceeds configured maximum request size | Keep extracted clips under 1 GB, or adjust `CASTLE_MAX_CLIP_SIZE_BYTES` and `CASTLE_MAX_REQUEST_SIZE_BYTES` together. |
 | `403 Forbidden` on stream lease renewal | Clip is temporary and request lacks valid session token | Provide `X-Session-Token` header or `?token=<session_token>` query parameter. |
 | Playwright tests fail with `ECONNREFUSED` | Vite or FastAPI is not running | Ensure both `localhost:3000` (Vite) and `127.0.0.1:8000` (FastAPI) are active before launching `test:e2e`. |
 

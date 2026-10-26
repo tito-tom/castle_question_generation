@@ -71,14 +71,14 @@ Upload -> Temporary Clip (Inactivity TTL 24h)
 
 ## 5. Dual Timestamp Coordinate Mapping
 
-Because original CASTLE recordings are approximately one hour long (~3600 seconds) and local extractions are short clips (<= 120 seconds), event timestamps exist in two coordinate spaces:
+Because original CASTLE recordings are approximately one hour long (~3600 seconds) and local extractions may be up to 600 seconds, event timestamps exist in two coordinate spaces:
 
 ```
 Source Video (0.0s to ~3745.0s)
-  |--------------------------[ Subclip: 120.0s to 145.0s ]------------------------|
+  |--------------------------[ Subclip: 120.0s to 720.0s ]------------------------|
                                |                       |
                                v                       v
-Uploaded Clip (0.0s to 25.0s) 0.0s                   25.0s
+Uploaded Clip (0.0s to 600.0s) 0.0s                 600.0s
                                |                       |
 Event A:                       |-----[ 10.0s - 15.0s ]-|
 ```

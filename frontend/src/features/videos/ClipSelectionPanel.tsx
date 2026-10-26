@@ -21,6 +21,7 @@ import {
   formatDuration,
   generateSelectionId,
 } from './timestampUtils';
+import { MAX_SOURCE_INTERVAL_SECONDS } from './analysisWindows';
 
 export interface ClipSelectionPanelProps {
   localVideo: LocalVideoItem;
@@ -201,7 +202,9 @@ export const ClipSelectionPanel: React.FC<ClipSelectionPanelProps> = ({
     setEndInputText(formatTimestamp(sel.endSeconds));
     setLabel(sel.label || '');
     setValidationError(null);
-    onPreviewInterval({ start: sel.startSeconds, end: sel.endSeconds });
+    if (sel.durationSeconds <= MAX_SOURCE_INTERVAL_SECONDS) {
+      onPreviewInterval({ start: sel.startSeconds, end: sel.endSeconds });
+    }
   };
 
   // Reset editor
@@ -217,6 +220,13 @@ export const ClipSelectionPanel: React.FC<ClipSelectionPanelProps> = ({
   };
 
   const calculatedDuration = Math.max(0, endSeconds - startSeconds);
+  const intervalExceedsLimit = calculatedDuration > MAX_SOURCE_INTERVAL_SECONDS;
+  const intervalIsInvalid = !validateInterval(
+    startSeconds,
+    endSeconds,
+    videoDuration,
+    MAX_SOURCE_INTERVAL_SECONDS,
+  ).isValid;
   const startPercent = Math.min(100, Math.max(0, (startSeconds / effectiveDuration) * 100));
   const endPercent = Math.min(100, Math.max(0, (endSeconds / effectiveDuration) * 100));
   const currentPercent = Math.min(100, Math.max(0, (currentTime / effectiveDuration) * 100));
@@ -318,6 +328,12 @@ export const ClipSelectionPanel: React.FC<ClipSelectionPanelProps> = ({
           </div>
         </div>
       </div>
+
+      {intervalExceedsLimit && (
+        <p data-testid="interval-limit-warning" className="text-xs text-red-400">
+          Interval must not exceed 10 minutes.
+        </p>
+      )}
 
       {/* Manual Input Fields & Boundary Actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -425,8 +441,9 @@ export const ClipSelectionPanel: React.FC<ClipSelectionPanelProps> = ({
           <button
             type="button"
             onClick={handlePreview}
+            disabled={intervalIsInvalid}
             data-testid="preview-selection-btn"
-            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow transition flex items-center space-x-1.5"
+            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg shadow transition flex items-center space-x-1.5"
             title="Preview playback from start to end boundary"
           >
             <Play className="w-3.5 h-3.5" />
@@ -436,8 +453,9 @@ export const ClipSelectionPanel: React.FC<ClipSelectionPanelProps> = ({
           <button
             type="button"
             onClick={handleSaveSelection}
+            disabled={intervalIsInvalid}
             data-testid="add-selection-btn"
-            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 text-xs font-semibold rounded-lg border border-slate-700 transition flex items-center space-x-1.5"
+            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-indigo-300 text-xs font-semibold rounded-lg border border-slate-700 transition flex items-center space-x-1.5"
           >
             {editingSelectionId ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
             <span>{editingSelectionId ? 'Update Selection' : 'Add Selection'}</span>
@@ -459,12 +477,13 @@ export const ClipSelectionPanel: React.FC<ClipSelectionPanelProps> = ({
           <button
             type="button"
             onClick={() => {
-              if (onOpenExtraction) {
+              if (onOpenExtraction && !intervalIsInvalid) {
                 onOpenExtraction({ start: startSeconds, end: endSeconds, label });
               }
             }}
+            disabled={intervalIsInvalid}
             data-testid="extract-clip-btn"
-            className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow transition flex items-center space-x-1.5"
+            className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg shadow transition flex items-center space-x-1.5"
             title="Prepare short clips for this selected interval"
           >
             <Scissors className="w-3.5 h-3.5" />
@@ -536,12 +555,13 @@ export const ClipSelectionPanel: React.FC<ClipSelectionPanelProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        if (onOpenExtraction) {
+                        if (onOpenExtraction && sel.durationSeconds <= MAX_SOURCE_INTERVAL_SECONDS) {
                           onOpenExtraction({ start: sel.startSeconds, end: sel.endSeconds, label: sel.label });
                         }
                       }}
+                      disabled={sel.durationSeconds > MAX_SOURCE_INTERVAL_SECONDS}
                       data-testid={`extract-selection-${sel.id}`}
-                      className="p-1.5 rounded-lg hover:bg-slate-800 text-indigo-400 hover:text-indigo-300 transition"
+                      className="p-1.5 rounded-lg hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-indigo-400 hover:text-indigo-300 transition"
                       title="Extract this saved interval"
                     >
                       <Scissors className="w-3.5 h-3.5" />
@@ -550,8 +570,9 @@ export const ClipSelectionPanel: React.FC<ClipSelectionPanelProps> = ({
                     <button
                       type="button"
                       onClick={() => onPreviewInterval({ start: sel.startSeconds, end: sel.endSeconds })}
+                      disabled={sel.durationSeconds > MAX_SOURCE_INTERVAL_SECONDS}
                       data-testid={`preview-selection-${sel.id}`}
-                      className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-indigo-300 transition"
+                      className="p-1.5 rounded-lg hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-slate-400 hover:text-indigo-300 transition"
                       title="Preview this interval"
                     >
                       <Play className="w-3.5 h-3.5" />

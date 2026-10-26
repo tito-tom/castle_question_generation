@@ -9,6 +9,7 @@ import {
   Info,
   Clock,
   HardDrive,
+  Loader2,
   Sparkles,
 } from 'lucide-react';
 import { StagedClipItem, formatFileSize } from '../../shared/types';
@@ -18,7 +19,7 @@ export interface StagedClipCardProps {
   stagedClip: StagedClipItem;
   onReplace: () => void;
   onClear: () => void;
-  onAnalyzeClip?: (stagedClip: StagedClipItem) => void;
+  onAnalyze: () => void;
   isAnalyzing?: boolean;
   analysisProgressText?: string;
   uploadProgress?: number | null;
@@ -26,14 +27,14 @@ export interface StagedClipCardProps {
   onRetryAnalysis?: () => void;
 }
 
-const MAX_CLIP_SIZE_BYTES = 200 * 1024 * 1024; // 200 MB
-const MAX_CLIP_DURATION_SECONDS = 120; // 120 seconds
+const MAX_CLIP_SIZE_BYTES = 1024 * 1024 * 1024; // 1 GB
+const MAX_CLIP_DURATION_SECONDS = 600; // 10 minutes
 
 export const StagedClipCard: React.FC<StagedClipCardProps> = ({
   stagedClip,
   onReplace,
   onClear,
-  onAnalyzeClip,
+  onAnalyze,
   isAnalyzing = false,
   analysisProgressText,
   uploadProgress,
@@ -41,12 +42,10 @@ export const StagedClipCard: React.FC<StagedClipCardProps> = ({
   onRetryAnalysis,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [previewError, setPreviewError] = useState(false);
 
   React.useEffect(() => {
     setPreviewError(false);
-    setIsPlaying(false);
   }, [stagedClip.id, stagedClip.objectUrl]);
 
   const isSizeExceeded = stagedClip.sizeBytes > MAX_CLIP_SIZE_BYTES;
@@ -133,10 +132,10 @@ export const StagedClipCard: React.FC<StagedClipCardProps> = ({
           </div>
           <div>
             <h4 className="text-xs font-bold text-white tracking-wide uppercase">
-              Staged Short Video Clip
+              Extracted Video Clip
             </h4>
             <p className="text-[11px] text-slate-400">
-              Ready for preview and temporary Qwen video understanding. Only this short clip will be uploaded.
+              Ready for video understanding. Only this selected interval clip will be uploaded.
             </p>
           </div>
         </div>
@@ -177,24 +176,33 @@ export const StagedClipCard: React.FC<StagedClipCardProps> = ({
       {/* Video Preview & Details Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Preview Screen */}
-        <div className="aspect-video bg-black rounded-lg overflow-hidden border border-slate-800 relative">
-          <video
-            ref={videoRef}
-            src={stagedClip.objectUrl}
-            controls
-            preload="metadata"
-            data-testid="staged-clip-video-player"
-            className="w-full h-full object-contain"
-            onError={() => setPreviewError(true)}
-            onPlay={() => setIsPlaying(true)}
-            onPause={() => setIsPlaying(false)}
-            onEnded={() => setIsPlaying(false)}
-          />
-          {previewError && (
-            <div className="absolute inset-0 bg-slate-950/90 flex items-center justify-center p-4 text-center text-xs text-rose-200" role="alert">
-              This staged video could not be decoded. Retry extraction or use Native FFmpeg / Import Existing Clip.
-            </div>
-          )}
+        <div className="space-y-2">
+          <div className="aspect-video bg-black rounded-lg overflow-hidden border border-slate-800 relative">
+            <video
+              ref={videoRef}
+              src={stagedClip.objectUrl}
+              controls
+              preload="metadata"
+              data-testid="staged-clip-video-player"
+              className="w-full h-full object-contain"
+              onError={() => setPreviewError(true)}
+            />
+            {previewError && (
+              <div className="absolute inset-0 bg-slate-950/90 flex items-center justify-center p-4 text-center text-xs text-rose-200" role="alert">
+                This video could not be decoded. Retry extraction or use Native FFmpeg / Import Existing Clip.
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onAnalyze}
+            disabled={isAnalyzing || isLimitsExceeded}
+            data-testid="analyze-video-btn"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isAnalyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {isAnalyzing ? 'Analyzing Video…' : 'Analyze Video'}
+          </button>
         </div>
 
         {/* Metadata & Provenance */}
@@ -270,12 +278,12 @@ export const StagedClipCard: React.FC<StagedClipCardProps> = ({
                 <p className="text-rose-200/90 leading-relaxed">
                   {isSizeExceeded && (
                     <span>
-                      Clip size ({formatFileSize(stagedClip.sizeBytes)}) exceeds 200 MB maximum upload limit.{' '}
+                      Clip size ({formatFileSize(stagedClip.sizeBytes)}) exceeds 1 GB maximum upload limit.{' '}
                     </span>
                   )}
                   {isDurationExceeded && (
                     <span>
-                      Clip duration ({stagedClip.durationSeconds.toFixed(1)}s) exceeds 120s maximum limit.{' '}
+                      Clip duration ({stagedClip.durationSeconds.toFixed(1)}s) exceeds 600s maximum limit.{' '}
                     </span>
                   )}
                   Please re-extract or trim a shorter interval before running Qwen.
@@ -307,24 +315,22 @@ export const StagedClipCard: React.FC<StagedClipCardProps> = ({
               </div>
             )}
 
-            {/* Upload Progress Bar */}
-            {uploadProgress !== null &&
-              uploadProgress !== undefined &&
-              uploadProgress >= 0 &&
-              uploadProgress < 100 && (
-                <div className="space-y-1 bg-slate-950/70 p-2 rounded-lg border border-slate-800">
-                  <div className="flex justify-between text-[10px] text-indigo-300 font-mono">
-                    <span>Uploading clip to server...</span>
-                    <span>{uploadProgress}%</span>
-                  </div>
-                  <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                    <div
-                      className="bg-indigo-500 h-1.5 rounded-full transition-all duration-200"
-                      style={{ width: `${uploadProgress}%` }}
-                    />
-                  </div>
+            {isAnalyzing && (
+              <div data-testid="clip-analysis-progress" className="space-y-1 rounded-lg border border-slate-800 bg-slate-950/70 p-2">
+                <div className="flex items-center justify-between text-[10px] text-indigo-300">
+                  <span className="inline-flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" />
+                    {uploadProgress !== null && uploadProgress !== undefined && uploadProgress < 100
+                      ? `Uploading selected clip · ${uploadProgress}%`
+                      : analysisProgressText || 'Analyzing selected clip...'}
+                  </span>
                 </div>
-              )}
+                {uploadProgress !== null && uploadProgress !== undefined && uploadProgress < 100 && (
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                    <div className="h-full bg-indigo-500 transition-all duration-200" style={{ width: `${uploadProgress}%` }} />
+                  </div>
+                )}
+              </div>
+            )}
 
             {stagedClip.method === 'browser_capture' && (
               <div
@@ -348,52 +354,6 @@ export const StagedClipCard: React.FC<StagedClipCardProps> = ({
             )}
           </div>
 
-          {/* Action Callout */}
-          <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
-            <button
-              type="button"
-              disabled={isAnalyzing || isLimitsExceeded || !onAnalyzeClip}
-              onClick={() => onAnalyzeClip && onAnalyzeClip(stagedClip)}
-              data-testid="upload-to-qwen-btn"
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition flex items-center space-x-1.5 ${
-                isAnalyzing
-                  ? 'bg-indigo-950 text-indigo-300 border-indigo-700/60 cursor-wait'
-                  : isLimitsExceeded || !onAnalyzeClip
-                  ? 'bg-slate-800/80 text-slate-500 border-slate-700/60 cursor-not-allowed'
-                  : 'bg-indigo-600 hover:bg-indigo-500 text-white border-indigo-500 shadow'
-              }`}
-              title={
-                isLimitsExceeded
-                  ? 'Clip exceeds limits (max 200MB, max 120s)'
-                  : 'Upload temporary clip and analyze with Qwen2.5-VL'
-              }
-            >
-              {isAnalyzing ? (
-                <>
-                  <span className="w-3.5 h-3.5 border-2 border-indigo-300/30 border-t-indigo-300 rounded-full animate-spin"></span>
-                  <span>
-                    {uploadProgress !== null &&
-                    uploadProgress !== undefined &&
-                    uploadProgress < 100
-                      ? `Uploading clip ${uploadProgress}%...`
-                      : analysisProgressText || 'Analyzing Clip with Qwen...'}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Analyze Clip with Qwen</span>
-                </>
-              )}
-            </button>
-            <span className="text-[10px] text-slate-400 italic">
-              {isLimitsExceeded
-                ? 'Limit exceeded'
-                : isAnalyzing
-                ? 'Processing on GPU...'
-                : 'Uploads short clip only'}
-            </span>
-          </div>
         </div>
       </div>
     </div>

@@ -7,8 +7,8 @@ export interface AnalysisWindow {
 export const MAX_SOURCE_INTERVAL_SECONDS = 10 * 60;
 export const ANALYSIS_WINDOW_SECONDS = 90;
 export const ANALYSIS_WINDOW_OVERLAP_SECONDS = 10;
-export const MAX_UPLOADED_CLIP_SECONDS = 120;
-export const MAX_UPLOADED_CLIP_BYTES = 200 * 1024 * 1024;
+export const MAX_UPLOADED_CLIP_SECONDS = MAX_SOURCE_INTERVAL_SECONDS;
+export const MAX_UPLOADED_CLIP_BYTES = 1024 * 1024 * 1024;
 
 export function createAnalysisWindows(
   startSeconds: number,

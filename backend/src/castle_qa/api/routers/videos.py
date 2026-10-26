@@ -121,7 +121,7 @@ def upload_video(
     summary="Upload and validate a temporary short video clip for Qwen analysis",
 )
 def upload_temporary_clip(
-    file: Annotated[UploadFile, File(description="Short video clip file to upload (max 200MB, max 120s)")],
+    file: Annotated[UploadFile, File(description="One extracted video clip (max 1GB, max 600s)")],
     service: Annotated[VideoService, Depends(get_video_service)],
     response: Response,
     session_id: Annotated[str | None, Form(description="Client session identifier")] = None,
@@ -138,8 +138,8 @@ def upload_temporary_clip(
     user_confirmed: Annotated[bool, Form(description="Whether user confirmed association")] = True,
 ) -> VideoDetailResponse:
     """
-    Safely stream and store an extracted short clip into temporary storage.
-    Enforces size limit (200MB) during streaming, validates duration (<=120s) with FFprobe,
+    Safely stream and store one extracted clip into temporary storage.
+    Enforces size limit (1GB) during streaming, validates duration (<=600s) with FFprobe,
     records source provenance metadata, and enforces the 24-hour meaningful inactivity lifecycle.
     """
     if not file.filename:

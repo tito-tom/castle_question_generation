@@ -45,10 +45,10 @@ class APISettings:
     question_directory: Path
     video_directory: Path
     temporary_clip_directory: Path
-    max_clip_size_bytes: int = 200 * 1024 * 1024
-    max_clip_duration_seconds: float = 120.0
+    max_clip_size_bytes: int = 1024 * 1024 * 1024
+    max_clip_duration_seconds: float = 600.0
     retention_hours: int = 24
-    max_request_size_bytes: int = 210 * 1024 * 1024
+    max_request_size_bytes: int = 1040 * 1024 * 1024
     max_concurrent_uploads: int = 3
     max_aggregate_temporary_storage_bytes: int = 5 * 1024 * 1024 * 1024  # 5 GB
     cleanup_interval_seconds: int = 3600  # 1 hour
@@ -92,10 +92,10 @@ class APISettings:
             ),
             video_directory=video_dir,
             temporary_clip_directory=temp_clips_dir,
-            max_clip_size_bytes=int(os.environ.get("CASTLE_MAX_CLIP_SIZE_BYTES", 200 * 1024 * 1024)),
-            max_clip_duration_seconds=float(os.environ.get("CASTLE_MAX_CLIP_DURATION_SECONDS", 120.0)),
+            max_clip_size_bytes=int(os.environ.get("CASTLE_MAX_CLIP_SIZE_BYTES", 1024 * 1024 * 1024)),
+            max_clip_duration_seconds=float(os.environ.get("CASTLE_MAX_CLIP_DURATION_SECONDS", 600.0)),
             retention_hours=int(os.environ.get("CASTLE_TEMP_RETENTION_HOURS", 24)),
-            max_request_size_bytes=int(os.environ.get("CASTLE_MAX_REQUEST_SIZE_BYTES", 210 * 1024 * 1024)),
+            max_request_size_bytes=int(os.environ.get("CASTLE_MAX_REQUEST_SIZE_BYTES", 1040 * 1024 * 1024)),
             max_concurrent_uploads=int(os.environ.get("CASTLE_MAX_CONCURRENT_UPLOADS", 3)),
             max_aggregate_temporary_storage_bytes=int(os.environ.get("CASTLE_MAX_AGGREGATE_TEMP_BYTES", 5 * 1024 * 1024 * 1024)),
             cleanup_interval_seconds=int(os.environ.get("CASTLE_CLEANUP_INTERVAL_SECONDS", 3600)),

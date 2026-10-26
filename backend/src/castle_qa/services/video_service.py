@@ -26,8 +26,8 @@ logger = logging.getLogger(__name__)
 
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".webm"}
 DEFAULT_MAX_UPLOAD_SIZE = 100 * 1024 * 1024  # 100 MB standard upload
-DEFAULT_MAX_CLIP_UPLOAD_SIZE = 200 * 1024 * 1024  # 200 MB temporary short clip
-DEFAULT_MAX_CLIP_DURATION = 120.0  # 120 seconds maximum clip duration
+DEFAULT_MAX_CLIP_UPLOAD_SIZE = 1024 * 1024 * 1024  # 1 GB temporary analysis clip
+DEFAULT_MAX_CLIP_DURATION = 600.0  # 10 minutes maximum analysis clip
 DEFAULT_RETENTION_HOURS = 24
 MIN_DISK_FREE_BUFFER = 500 * 1024 * 1024  # 500 MB minimum server free disk safeguard
 DEFAULT_MAX_AGGREGATE_TEMP_BYTES = 5 * 1024 * 1024 * 1024  # 5 GB total aggregate temp clips limit
@@ -79,6 +79,8 @@ class VideoService:
         stream_tracker: StreamLeaseTracker | None = None,
         max_concurrent_uploads: int = DEFAULT_MAX_CONCURRENT_UPLOADS,
         max_aggregate_temporary_storage: int = DEFAULT_MAX_AGGREGATE_TEMP_BYTES,
+        max_clip_upload_size: int = DEFAULT_MAX_CLIP_UPLOAD_SIZE,
+        max_clip_duration_seconds: float = DEFAULT_MAX_CLIP_DURATION,
     ):
         project_root = Path(__file__).resolve().parents[2]
         video_dir_env = os.environ.get("CASTLE_VIDEO_STORAGE_DIR") or os.environ.get("CASTLE_VIDEO_DIR")
@@ -114,6 +116,8 @@ class VideoService:
             output_dir=self._clips_dir,
         )
         self._max_upload_size = max_upload_size
+        self._max_clip_upload_size = max_clip_upload_size
+        self._max_clip_duration_seconds = max_clip_duration_seconds
         self._max_aggregate_temporary_storage = max_aggregate_temporary_storage
         self._max_concurrent_uploads = max_concurrent_uploads
         self._upload_semaphore = threading.Semaphore(max_concurrent_uploads)
@@ -330,8 +334,8 @@ class VideoService:
         session_id: str | None = None,
         session_token: str | None = None,
         source_metadata: dict | None = None,
-        max_upload_size: int = DEFAULT_MAX_CLIP_UPLOAD_SIZE,
-        max_duration_seconds: float = DEFAULT_MAX_CLIP_DURATION,
+        max_upload_size: int | None = None,
+        max_duration_seconds: float | None = None,
         retention_hours: int = DEFAULT_RETENTION_HOURS,
     ) -> VideoItem:
         """
@@ -342,6 +346,11 @@ class VideoService:
         acquired = self._upload_semaphore.acquire(blocking=False)
         if not acquired:
             raise ValueError("Server upload capacity busy. Too many concurrent uploads in progress.")
+
+        if max_upload_size is None:
+            max_upload_size = self._max_clip_upload_size
+        if max_duration_seconds is None:
+            max_duration_seconds = self._max_clip_duration_seconds
 
         reservation_file = None
         try:

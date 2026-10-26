@@ -57,7 +57,7 @@ Base API URL prefix: `/api/v1`
 - **Path**: `POST /api/v1/videos/upload-clip` (Alias: `POST /api/v1/videos/temporary-clip`)
 - **Content-Type**: `multipart/form-data`
 - **Parameters**:
-  - `file`: Binary file stream (max 200 MB, max 120s duration).
+  - `file`: One continuous binary video clip (max 1 GB, max 600s duration).
   - `session_id` (optional): Client session identifier string.
   - `session_token` (optional): Session authorization token.
   - `source_filename` (optional): Original source video name (for display only).
