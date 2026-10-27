@@ -3,7 +3,7 @@
 # Targets NVIDIA CUDA (e.g. RTX 5090) on Ubuntu
 # ==========================================
 
-FROM pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime
+FROM pytorch/pytorch:2.13.0-cuda13.0-cudnn9-runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -16,20 +16,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Install required Python packages for worker, queue, and Qwen
+# Install the API and GPU dependency sets. requirements-gpu.txt pins the
+# CUDA-enabled PyTorch/Torchvision pair and compatible Transformers versions.
 COPY requirements-api.txt .
 COPY requirements-gpu.txt .
 
 RUN python -m pip install --no-cache-dir \
-    sqlalchemy>=2.0 \
-    alembic>=1.13 \
-    pydantic>=2.7 \
-    python-dotenv>=1.0 \
-    transformers>=4.48 \
-    accelerate>=1.0 \
-    av>=14 \
-    Pillow>=10 \
-    torchvision
+    -r requirements-api.txt \
+    -r requirements-gpu.txt
 
 # Create directory structure
 RUN mkdir -p /app/data/analysis \

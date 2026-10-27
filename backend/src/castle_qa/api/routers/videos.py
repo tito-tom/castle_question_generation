@@ -40,7 +40,13 @@ def get_video_service() -> VideoService:
     """
     Dependency provider for the VideoService.
     """
-    return VideoService()
+    settings = APISettings.from_environment()
+    return VideoService(
+        max_clip_upload_size=settings.max_clip_size_bytes,
+        max_clip_duration_seconds=settings.max_clip_duration_seconds,
+        max_concurrent_uploads=settings.max_concurrent_uploads,
+        max_aggregate_temporary_storage=settings.max_aggregate_temporary_storage_bytes,
+    )
 
 
 def get_job_repository() -> JobRepository:

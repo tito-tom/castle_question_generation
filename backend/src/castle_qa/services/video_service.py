@@ -104,7 +104,9 @@ class VideoService:
         )
         self._temp_metadata_dir = self._temp_clips_dir / "metadata"
 
-        self._upload_dir.mkdir(parents=True, exist_ok=True)
+        # The library video directory is mounted read-only in Docker. Do not
+        # create its optional uploads subdirectory during service construction:
+        # read-only library access is needed for listing and temporary clips.
         self._clips_dir.mkdir(parents=True, exist_ok=True)
         self._metadata_dir.mkdir(parents=True, exist_ok=True)
         self._temp_clips_dir.mkdir(parents=True, exist_ok=True)
@@ -268,6 +270,9 @@ class VideoService:
                 f"Unsupported video extension '{extension}'. Allowed: {sorted(ALLOWED_EXTENSIONS)}"
             )
 
+        # Permanent uploads use a separate optional folder. Create it only when
+        # this endpoint is called, so the read-only library can still be listed.
+        self._upload_dir.mkdir(parents=True, exist_ok=True)
         self._check_disk_space(self._upload_dir, self._max_upload_size)
 
         clean_stem = re.sub(r"[^a-zA-Z0-9_-]", "_", Path(original_filename).stem)[:40]
