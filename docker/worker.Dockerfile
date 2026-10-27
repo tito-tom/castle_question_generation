@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements-api.txt .
 COPY requirements-gpu.txt .
 
-RUN python -m pip install --no-cache-dir \
+RUN python -m pip install --break-system-packages --no-cache-dir \
     -r requirements-api.txt \
     -r requirements-gpu.txt
 
@@ -41,6 +41,6 @@ COPY backend/alembic/ ./alembic/
 COPY backend/pyproject.toml ./pyproject.toml
 
 # Install package in container
-RUN python -m pip install --no-cache-dir -e .
+RUN python -m pip install --break-system-packages --no-cache-dir -e .
 
 CMD ["python", "-m", "castle_qa.workers.entrypoint", "--poll-interval", "2.0"]
