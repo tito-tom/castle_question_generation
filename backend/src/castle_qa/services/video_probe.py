@@ -51,7 +51,7 @@ class VideoProbe:
             )
             data = json.loads(process.stdout)
             format_info = data.get("format", {})
-            duration = float(format_info.get("duration", 0.0))
+            duration = self._positive_float(format_info.get("duration")) or 0.0
             size_bytes = int(format_info.get("size", video_path.stat().st_size))
 
             width = None
@@ -61,6 +61,9 @@ class VideoProbe:
             has_video_stream = False
 
             for stream in data.get("streams", []):
+                stream_duration = self._positive_float(stream.get("duration"))
+                if stream_duration is not None:
+                    duration = max(duration, stream_duration)
                 if stream.get("codec_type") == "video":
                     has_video_stream = True
                     width = int(stream.get("width")) if stream.get("width") else None
@@ -72,6 +75,12 @@ class VideoProbe:
                         if len(parts) == 2 and float(parts[1]) > 0:
                             fps = round(float(parts[0]) / float(parts[1]), 2)
                     break
+
+            # Browser-recorded WebM files can omit both container and stream
+            # duration metadata. Derive their duration from actual packet
+            # timestamps instead of rejecting a playable clip as unreadable.
+            if duration <= 0.0:
+                duration = self._get_packet_duration(video_path)
 
             if not has_video_stream and duration <= 0.0:
                 raise ValueError(f"No valid video stream found in: {video_path}")
@@ -98,3 +107,56 @@ class VideoProbe:
                 duration_seconds=0.0,
                 size_bytes=size,
             )
+
+    @staticmethod
+    def _positive_float(value: object) -> float | None:
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed > 0.0 else None
+
+    @classmethod
+    def _get_packet_duration(cls, video_path: Path) -> float:
+        command = [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_packets",
+            "-show_entries",
+            "packet=pts_time,dts_time,duration_time",
+            "-print_format",
+            "json",
+            str(video_path),
+        ]
+        process = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        packets = json.loads(process.stdout).get("packets", [])
+        first_timestamp: float | None = None
+        last_end: float | None = None
+        for packet in packets:
+            timestamp = cls._positive_or_zero_float(packet.get("pts_time"))
+            if timestamp is None:
+                timestamp = cls._positive_or_zero_float(packet.get("dts_time"))
+            if timestamp is None:
+                continue
+            packet_duration = cls._positive_or_zero_float(packet.get("duration_time")) or 0.0
+            first_timestamp = timestamp if first_timestamp is None else min(first_timestamp, timestamp)
+            packet_end = timestamp + packet_duration
+            last_end = packet_end if last_end is None else max(last_end, packet_end)
+
+        if first_timestamp is None or last_end is None or last_end <= first_timestamp:
+            return 0.0
+        return last_end - first_timestamp
+
+    @staticmethod
+    def _positive_or_zero_float(value: object) -> float | None:
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed >= 0.0 else None
