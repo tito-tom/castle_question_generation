@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
@@ -33,7 +34,14 @@ def test_real_mode_fails_explicitly_when_cuda_missing(tmp_path: Path):
     """Verify that inference_mode='real' raises RuntimeError if CUDA is unavailable instead of falling back to mock."""
     analysis_repo = VideoAnalysisRepository(directory=tmp_path / "analysis")
     question_repo = QuestionRepository(tmp_path / "questions.db")
-    with patch("torch.cuda.is_available", return_value=False):
+    torch_stub = ModuleType("torch")
+    torch_stub.cuda = SimpleNamespace(is_available=lambda: False)
+    torch_stub.__version__ = "test"
+    transformers_stub = ModuleType("transformers")
+    with patch.dict(
+        "sys.modules",
+        {"torch": torch_stub, "transformers": transformers_stub},
+    ):
         with pytest.raises(RuntimeError) as exc_info:
             create_job_handler(
                 analysis_repo=analysis_repo,
@@ -244,7 +252,8 @@ def test_legacy_analysis_deserialization_compatibility(tmp_path: Path):
 
 def test_frontend_command_generator_omits_overwrite_flag():
     """Verify that frontend native command generator explicitly omits -y in generated command strings."""
-    ts_file = Path("frontend/src/features/videos/nativeCommandGenerator.ts")
+    repo_root = Path(__file__).resolve().parents[2]
+    ts_file = repo_root / "frontend/src/features/videos/nativeCommandGenerator.ts"
     assert ts_file.exists(), "nativeCommandGenerator.ts must exist"
     content = ts_file.read_text(encoding="utf-8")
 

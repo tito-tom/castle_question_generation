@@ -204,8 +204,8 @@ def test_2_request_body_limit_enforcement(safety_environment):
     """2. Request body limit enforcement (413 Payload Too Large before spooling)."""
     client = safety_environment["client"]
 
-    # Simulate an oversized request with Content-Length exceeding 210 MB
-    oversized_length = str(250 * 1024 * 1024)
+    # Send only an oversized Content-Length header; no large body is allocated.
+    oversized_length = str(APISettings.from_environment().max_request_size_bytes + 1)
     response = client.post(
         "/api/v1/videos/upload-clip",
         headers={"Content-Length": oversized_length},
@@ -622,10 +622,14 @@ def test_23_chunked_upload_and_invalid_content_length_protection(safety_environm
     )
     assert res_neg.status_code == 400
 
-    # Content-Length exceeding 210 MB limit
+    # Content-Length exceeding the configured request-body limit
     res_huge = client.post(
         "/api/v1/videos/upload-clip",
-        headers={"Content-Length": str(250 * 1024 * 1024)},
+        headers={
+            "Content-Length": str(
+                APISettings.from_environment().max_request_size_bytes + 1
+            )
+        },
     )
     assert res_huge.status_code == 413
 
