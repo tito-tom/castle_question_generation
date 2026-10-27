@@ -125,7 +125,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     });
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col space-y-4">
+    <div className="min-w-0 w-full bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col space-y-4">
       {/* Prominent MOCK / TEST DATA Notice when simulated */}
       {analysis.is_mock && (
         <div
@@ -168,8 +168,8 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
       {/* Header Info & Actions Toolbar */}
       <div className="border-b border-slate-800 pb-3 space-y-3">
-        <div className="flex items-start justify-between gap-3">
-          <div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+          <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-sm font-semibold text-white">Chronological Event Timeline</h2>
               <span className="text-[11px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700">
@@ -224,7 +224,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
           </div>
 
           {analysis.scene && (
-            <span className="text-xs bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 px-2.5 py-1 rounded-md font-mono shrink-0">
+            <span className="min-w-0 max-w-full whitespace-normal break-words text-xs bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 px-2.5 py-1 rounded-md font-mono sm:max-w-[52%]">
               {analysis.scene}
             </span>
           )}
@@ -232,7 +232,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
         {/* Source mapping metadata if available */}
         {analysis.source_video_name && (
-          <div className="flex items-center space-x-2 text-[11px] text-slate-400 font-mono">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-400 font-mono">
             <span className="text-emerald-400 font-semibold">Source: {analysis.source_video_name}</span>
             {analysis.source_start_seconds !== undefined && analysis.source_start_seconds !== null && (
               <span className="text-slate-300">
@@ -247,11 +247,11 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
           </div>
         )}
 
-        <section className="rounded-lg border border-slate-800 bg-slate-950/50 p-3" aria-label="Video summary">
+        <section className="min-w-0 rounded-lg border border-slate-800 bg-slate-950/50 p-3" aria-label="Video summary">
           <div className="flex items-start justify-between gap-3">
-            <div>
+            <div className="min-w-0 flex-1">
               <h3 className="text-xs font-semibold text-slate-200">Video Summary</h3>
-              <p className="mt-1.5 text-sm leading-relaxed text-slate-300">{analysis.summary}</p>
+              <p className="mt-1.5 break-words text-sm leading-relaxed text-slate-300">{analysis.summary}</p>
             </div>
             <button
               onClick={handleCopySummary}
@@ -315,7 +315,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
       </div>
 
       {/* Events List */}
-      <div className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
+      <div className="min-w-0 space-y-3 max-h-[460px] overflow-y-auto pr-1">
         {chronologicalEvents.map(({ event, sourceIndex: idx }) => {
           const clipStart = event.clip_start_seconds ?? event.start_seconds;
           const clipEnd = event.clip_end_seconds ?? event.end_seconds;
@@ -333,14 +333,14 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
           return (
             <div
               key={idx}
-              className={`p-3 rounded-lg border transition ${
+              className={`min-w-0 p-3 rounded-lg border transition ${
                 isActive
                   ? 'bg-indigo-950/40 border-indigo-500/50 shadow-md'
                   : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
               }`}
             >
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex flex-wrap items-center gap-1.5">
+              <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                   {/* Clip relative timestamp */}
                   <span
                     data-testid="event-clip-time"
@@ -384,7 +384,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                   )}
                 </div>
 
-                <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                <div className="flex flex-wrap items-center gap-1.5 sm:ml-2 sm:shrink-0">
                   <button
                     onClick={() =>
                       onSelectInterval({
@@ -412,7 +412,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                 </div>
               </div>
 
-              <p data-testid={`event-description-${idx}`} className="text-xs text-slate-200 font-medium leading-relaxed mb-2">
+              <p data-testid={`event-description-${idx}`} className="mb-2 min-w-0 break-words text-xs font-medium leading-relaxed text-slate-200">
                 {event.description}
               </p>
 

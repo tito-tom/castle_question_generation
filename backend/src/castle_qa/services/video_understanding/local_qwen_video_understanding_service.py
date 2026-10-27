@@ -81,7 +81,38 @@ class LocalQwenVideoUnderstandingService(
             )
         )
 
-        
+    def generate_text(self, prompt: str, max_new_tokens: int = 768) -> str:
+        """Run text-only generation with the already loaded local Qwen model."""
+        if max_new_tokens <= 0:
+            raise ValueError("max_new_tokens must be positive.")
+
+        messages = [
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": prompt}],
+            }
+        ]
+        inputs = self._processor.apply_chat_template(
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+            return_dict=True,
+            return_tensors="pt",
+        ).to(self._model.device)
+
+        with self._torch.inference_mode():
+            generated = self._model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
+            )
+
+        new_tokens = generated[0, inputs["input_ids"].shape[-1]:]
+        return self._processor.decode(
+            new_tokens,
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        ).strip()
 
     def analyze(self, clip: ClipResult) -> VideoAnalysis:
 

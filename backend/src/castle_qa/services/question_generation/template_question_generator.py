@@ -48,6 +48,7 @@ class TemplateQuestionGenerator(QuestionGenerationService):
             question = self._question_from_description(
                 actor = event.actor,
                 description = event.description,
+                question_starter = criteria.question_starter,
             )
 
             if question is None:
@@ -120,6 +121,7 @@ class TemplateQuestionGenerator(QuestionGenerationService):
             self,
             actor: str | None,
             description: str,
+            question_starter: str | None = "who",
     ) -> str | None:
         
         if not actor or not description:
@@ -158,4 +160,8 @@ class TemplateQuestionGenerator(QuestionGenerationService):
         ):
             return None
 
-        return f"Who {predicate}?"
+        if question_starter == "what":
+            return f"What is happening when someone {predicate}?"
+        if question_starter in (None, "who"):
+            return f"Who {predicate}?"
+        return None

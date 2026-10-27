@@ -22,9 +22,9 @@ class QuestionValidator:
             if not text.endswith("?"):
                 continue
 
-            if criteria.require_who:
+            if criteria.question_starter:
                 if not re.match(
-                    r"^Who\b",
+                    rf"^{re.escape(criteria.question_starter)}\b",
                     text,
                     flags=re.IGNORECASE,
                 ):

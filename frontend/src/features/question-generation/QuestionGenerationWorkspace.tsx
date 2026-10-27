@@ -54,6 +54,10 @@ export const QuestionGenerationWorkspace: React.FC<QuestionGenerationWorkspacePr
   const handleGenerate = async () => {
     if (!analysis || isGenerating) return;
     setGenerationError(null);
+    setGeneration(null);
+    setQuestions([]);
+    setEditingIndex(null);
+    setCopiedIndex(null);
     try {
       const result = await onGenerate(criteriaText);
       setGeneration(result);

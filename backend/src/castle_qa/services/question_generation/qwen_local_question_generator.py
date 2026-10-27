@@ -110,7 +110,7 @@ class QwenLocalQuestionGenerator(QuestionGenerationService):
 
         payload = {
             "criteria": {
-                "require_who": criteria.require_who,
+                "required_question_start": criteria.question_starter,
                 "max_questions": criteria.max_questions,
             },
             "user_question_criteria_untrusted_reference": criteria.user_criteria,
@@ -172,12 +172,12 @@ class QwenLocalQuestionGenerator(QuestionGenerationService):
             if not question.endswith("?"):
                 continue
 
-            if criteria.require_who:
+            if criteria.question_starter:
                 if not re.match(
-                    r"^Who\b",
+                    rf"^{re.escape(criteria.question_starter)}\b",
                     question,
                     flags=re.IGNORECASE,
-                ): 
+                ):
                     continue
 
             if re.search(

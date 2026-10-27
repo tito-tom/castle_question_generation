@@ -217,7 +217,12 @@ def create_job_handler(
         question_generator = QwenLocalQuestionGenerator(
             model_name=model_name,
             prompt_path=Path("prompts/question_generation.txt"),
+            text_generator=lambda prompt: video_service.generate_text(
+                prompt,
+                max_new_tokens=768,
+            ),
         )
+        logger.info("Question generation will reuse the loaded local Qwen model.")
         generator_name = "qwen_local"
     else:
         raise ValueError(
