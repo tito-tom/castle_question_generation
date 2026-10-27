@@ -1,148 +1,94 @@
 # CASTLE QA Studio
 
-**AI Video Understanding & Grounded Question-Answering for Whodunnit Annotation Assistance**
+CASTLE QA Studio turns a selected video interval into a readable event timeline, then generates evidence-grounded question suggestions for use by annotators in other tools.
 
-CASTLE QA Studio is an annotation assistance platform designed to extract, inspect, and evaluate event timelines and question-answering pairs from long video recordings. It pairs a **FastAPI** backend, an asynchronous **worker queue** running **Qwen2.5-VL**, and a modern **ReactJS + Vite + TypeScript** frontend.
+## What it does
 
----
+- Opens and previews a video in the browser. The original recording stays on the user's computer.
+- Extracts one continuous interval, up to 10 minutes, and uploads only that clip for analysis.
+- Shows a chronological video summary and event timeline with source timestamps.
+- Generates question suggestions from retained video-understanding evidence. Optional criteria guide question style and event selection; they cannot add unsupported video facts.
+- Supports CPU mock processing for development and local Qwen2.5-VL inference on a configured NVIDIA GPU worker.
 
-## 1. System Capabilities
+The main workspace has two result tabs: **Video Understanding** and **Generate Questions**. The backend retains additional API routes for compatibility and existing data; annotation review and video chat are not part of the primary user workflow.
 
-- **Local-First Privacy**: Original CASTLE recordings remain on the user's computer. One selected interval clip (up to 600s and 1 GB) is uploaded for analysis.
-- **Qwen2.5-VL Video Understanding**: Extracts chronological observable events with dual timestamp intervals (`start_seconds`, `end_seconds` and source-relative `source_start_seconds`, `source_end_seconds`), actor identification, actions, objects, targets, and concise factual summaries.
-- **Grounded Video Question Answering (Video QA)**: Annotators ask natural language questions about video content and receive answers grounded with:
-  - Temporal video evidence intervals.
-  - Observability status (distinguishing directly observable facts from uncertain interpretations).
-  - Evidence-matching confidence scores.
-  - One-click timeline seeking directly to the supporting evidence in the video player.
-- **Human Annotation Review Loop**: Annotators review, edit, accept, or reject AI-extracted events and generated questions.
-- **Whodunnit Export Adapter**: Exports human-verified annotations into Whodunnit-compatible JSON and CSV formats with candidate distractors derived from scene actors.
-- **Temporary Storage Lifecycle**: 24-hour meaningful inactivity TTL, cross-process stream lease tracking, 30-second active upload reservation refreshing, and persistent library saving.
+## Architecture
 
----
+~~~mermaid
+flowchart LR
+    Browser[React and Vite app] -->|selected clip and API requests| API[FastAPI API]
+    API -->|job records| DB[(SQLite job queue)]
+    Worker[Mock or local Qwen worker] -->|claims and updates jobs| DB
+    Worker -->|analysis and question records| Storage[(JSON data stores)]
+    API --> Storage
+~~~
 
-## 2. Architecture Overview
+The frontend is organized by user-facing feature. The backend follows a layered structure: API routes and schemas, application workflows, domain models, services, repositories, and a separate inference worker.
 
-```
-                      ┌────────────────────────────────────────┐
-                      │    ReactJS Frontend (Vite + TS)        │
-                      │  - Video player with interval scrubber │
-                      │  - Chronological event timeline        │
-                      │  - Grounded Video QA query panel       │
-                      │  - Whodunnit review & export modal     │
-                      └──────────────────┬─────────────────────┘
-                                         │ (HTTP / JSON / Video Stream)
-                                         ▼
-                      ┌────────────────────────────────────────┐
-                      │         FastAPI Backend (Port 8000)    │
-                      │  - /api/v1/videos (upload, stream)     │
-                      │  - /api/v1/analyses (view events)      │
-                      │  - /api/v1/jobs (async job queue)      │
-                      │  - /api/v1/qa (grounded video QA)      │
-                      │  - /api/v1/annotations (review/export) │
-                      └──────────────────┬─────────────────────┘
-                                         │
-             ┌───────────────────────────┴───────────────────────────┐
-             ▼                                                       ▼
-┌─────────────────────────────┐                         ┌─────────────────────────────┐
-│   SQLite Job Queue & DB     │                         │   Storage & Repositories    │
-│  - Claim tokens & worker IDs│                         │  - data/videos (raw video)  │
-│  - Heartbeat tracking       │                         │  - data/analysis (JSON)     │
-│  - Stale job auto-recovery  │                         │  - data/reviews (sessions)  │
-└────────────┬────────────────┘                         └──────────────┬──────────────┘
-             │                                                         │
-             └───────────────────────────┬─────────────────────────────┘
-                                         ▼
-                      ┌────────────────────────────────────────┐
-                      │   Inference Worker (Mock or Qwen GPU)  │
-                      │  - Background heartbeat thread         │
-                      │  - Video understanding analysis        │
-                      │  - Grounded question generation        │
-                      └────────────────────────────────────────┘
-```
+## Run with Docker
 
----
+### CPU development with mock inference
 
-## 3. Quick Start (Local Laptop Development)
+~~~bash
+docker compose up -d --build
+docker compose exec api python -m alembic -c /app/alembic.ini upgrade head
+~~~
 
-Local CPU testing and development can be performed on Windows, macOS, or Linux without an NVIDIA GPU using the built-in mock and template engines.
+Open [http://localhost:3000](http://localhost:3000). The API health endpoint is [http://localhost:8000/api/v1/health](http://localhost:8000/api/v1/health).
 
-### 1. Prerequisites & Installation
-- Python >= 3.10
-- Node.js >= 18.x & npm
-- FFmpeg on system `PATH`
+### NVIDIA GPU worker
 
-From repository root:
-```powershell
-# Install backend package with API and dev dependencies
+On a host with Docker's NVIDIA Container Toolkit configured:
+
+~~~bash
+docker compose -f compose.yaml -f compose.gpu.yaml up -d --build
+docker compose -f compose.yaml -f compose.gpu.yaml exec api python -m alembic -c /app/alembic.ini upgrade head
+~~~
+
+The GPU override selects real inference and keeps the Hugging Face model cache in a named Docker volume. The first worker start downloads model files; later starts reuse that cache. See [docs/LAB_GPU_DEPLOYMENT.md](docs/LAB_GPU_DEPLOYMENT.md) for setup and troubleshooting.
+
+## Develop locally
+
+Prerequisites: Python 3.10+, Node.js 18+, npm, and FFmpeg with ffprobe available on PATH.
+
+~~~bash
 python -m pip install -e "./backend[api,dev]"
-
-# Initialize database schema
 python -m alembic -c backend/alembic.ini upgrade head
+npm --prefix frontend install
+~~~
 
-# Install frontend dependencies
-cd frontend && npm install && cd ..
-```
+Run the API, mock worker, and frontend in separate terminals from the repository root:
 
-### 2. Start Backend & Mock Worker
-```powershell
-# In terminal 1 (FastAPI backend):
-python -m uvicorn castle_qa.api.main:create_app --factory --host 127.0.0.1 --port 8000
-
-# In terminal 2 (Mock Worker):
+~~~bash
+python -m uvicorn castle_qa.api.main:app --host 127.0.0.1 --port 8000
 python -m castle_qa.workers.entrypoint --mock
-```
+npm --prefix frontend run dev
+~~~
 
-### 3. Start Frontend
-```powershell
-# In terminal 3 (Vite Frontend):
-cd frontend
-npm install
-npm run dev
-# Open http://localhost:3000 in your browser
-```
+## Repository map
 
-### 4. Run Pre-Flight Diagnostics
-```powershell
-python -m castle_qa.deployment.readiness_check
-```
+~~~text
+backend/src/castle_qa/
+  api/             HTTP routes, schemas, dependencies, middleware
+  application/     Video and question workflows
+  domain/          Analysis, event, job, and criteria models
+  infrastructure/  SQLite and file-backed repositories
+  services/        Video processing, inference, and generation
+  workers/         Background job execution
+frontend/src/
+  features/        Video, understanding, and question-generation UI
+  shared/          API client, common components, and types
+docs/              Architecture, development, API, and deployment guides
+docker/            API, worker, frontend images, and Nginx configuration
+~~~
 
----
+## Validation
 
-## 4. Documentation Index
-
-Detailed engineering documentation is organized in the `docs/` directory:
-
-- [docs/architecture.md](file:///d:/DCU-Internship/castle-question-generation/docs/architecture.md): Technical architecture, data flows, dual timestamp mapping, and storage lifecycles.
-- [docs/DEVELOPMENT.md](file:///d:/DCU-Internship/castle-question-generation/docs/DEVELOPMENT.md): Detailed local development guide, setup instructions, and troubleshooting.
-- [docs/LAB_GPU_DEPLOYMENT.md](file:///d:/DCU-Internship/castle-question-generation/docs/LAB_GPU_DEPLOYMENT.md): Step-by-step handover and deployment guide for the NVIDIA GPU lab PC.
-- [docs/TESTING.md](file:///d:/DCU-Internship/castle-question-generation/docs/TESTING.md): Comprehensive test suite guide (181 backend pytest tests, 74 frontend tests, 15 Playwright E2E tests).
-- [docs/API.md](file:///d:/DCU-Internship/castle-question-generation/docs/API.md): Authoritative REST API inventory based on OpenAPI route registration.
-- [docs/ANNOTATION_PROVENANCE.md](file:///d:/DCU-Internship/castle-question-generation/docs/ANNOTATION_PROVENANCE.md): Inference provenance (mock vs real), heuristic QA scores, and review statuses.
-
----
-
-## 5. Running Tests
-
-```powershell
-# Backend Pytest Suite (181 tests)
-python -m pytest backend/tests -v
-
-# Frontend Unit & Component Tests (74 tests)
+~~~bash
+python -m pytest backend/tests
 npm --prefix frontend test
-
-# Browser End-to-End Tests (Playwright on Microsoft Edge - 15 tests)
-npm --prefix frontend run test:e2e
-
-# Production Frontend Build
 npm --prefix frontend run build
-```
+npm --prefix frontend run test:e2e
+~~~
 
----
-
-## 6. Important Operational Limitations
-
-1. **Current Environment**: Development and verification are conducted on a Windows laptop without an NVIDIA CUDA GPU. Real Qwen2.5-VL inference is prepared for deployment on a dedicated lab PC (Task 8).
-2. **QA Confidence Scoring**: Confidence scores displayed in Grounded QA are **heuristic evidence-matching metrics**, not calibrated Bayesian probabilities of answer correctness.
-3. **Whodunnit Compatibility**: Exports use a research-compatible adapter with candidate distractor generation, not an officially certified schema.
-4. **Frame Sampling Baseline**: The system operates at a verified **1.0 FPS** baseline. Experimental 2.0 FPS sampling is supported via configuration (`VIDEO_FPS=2.0`).
+See [docs/TESTING.md](docs/TESTING.md) for test scope and setup. See [docs/API.md](docs/API.md) for the HTTP API reference.

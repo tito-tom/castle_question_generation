@@ -2,6 +2,8 @@
 
 This document describes how annotation metadata, provenance, confidence scores, and lifecycle states are tracked throughout the CASTLE QA Studio platform.
 
+The primary user interface focuses on Video Understanding and Generate Questions. This document covers provenance and review/export metadata used by retained APIs and historical records; it does not describe an in-app annotation workflow.
+
 ---
 
 ## 1. Inference Provenance: Mock vs Real vs Legacy Unverified
@@ -24,8 +26,7 @@ The system enforces four deterministic classification rules:
 ## 2. QA Confidence Badges vs Calibrated Probabilities
 
 ### 2.1 Heuristic Evidence-Matching
-In the Grounded Video QA panel:
-- When an annotator asks a question, [GroundedVideoQAService](file:///d:/DCU-Internship/castle-question-generation/backend/src/castle_qa/services/video_qa_service.py) evaluates candidate events using token overlap and semantic matching.
+The retained Grounded QA API uses [GroundedVideoQAService](../backend/src/castle_qa/services/video_qa_service.py) to evaluate candidate events using token overlap and semantic matching.
 - The returned `confidence` value (e.g. `0.85` / `85%`) is a **heuristic evidence-matching score**, measuring how strongly the lexical elements of the query align with the observable event descriptions.
 
 ### 2.2 Critical Distinction
@@ -100,6 +101,6 @@ Event A:                       |-----[ 10.0s - 15.0s ]-|
 
 ## 7. Frame Sampling Rates: Baseline vs Proposed Experiments
 
-- **Existing Baseline**: **1.0 FPS** (1 frame per second). This provides reliable temporal coverage while keeping token counts within standard GPU context limits (~1024 to ~1536 tokens).
+- **Sampling**: Frame sampling is configurable. The real Qwen video service samples across the selected clip and caps the number of frames to the configured model input limit.
 - **Proposed Experiment (2.0 FPS)**: Increasing sampling rate to 2.0 FPS provides finer temporal granularity for rapid interactions, but doubles token consumption and VRAM usage. It is supported as a configurable option (`VIDEO_FPS=2.0`), not an established baseline.
 

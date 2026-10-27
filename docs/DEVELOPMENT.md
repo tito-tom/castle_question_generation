@@ -59,25 +59,22 @@ To run the application locally on your laptop, start three lightweight processes
 
 ### Terminal 1: FastAPI Backend
 ```powershell
-cd d:\DCU-Internship\castle-question-generation
-& 'C:\Users\TITO TOM\miniconda3\envs\yolo_seg_root\python.exe' -m uvicorn castle_qa.api.main:create_app --factory --host 127.0.0.1 --port 8000
+python -m uvicorn castle_qa.api.main:app --host 127.0.0.1 --port 8000
 ```
 - Health check URL: `http://127.0.0.1:8000/api/v1/health`
 - Interactive Swagger docs: `http://127.0.0.1:8000/docs`
 
 ### Terminal 2: Background Inference Worker (CPU Mock Mode)
 ```powershell
-cd d:\DCU-Internship\castle-question-generation
-& 'C:\Users\TITO TOM\miniconda3\envs\yolo_seg_root\python.exe' -m castle_qa.workers.entrypoint --mock
+python -m castle_qa.workers.entrypoint --mock
 ```
 - Runs in deterministic mock simulation mode.
 - Does **NOT** require NVIDIA GPU, CUDA runtime, or Qwen model weights.
-- Processes queued video-understanding and question-generation jobs in 2–4 seconds.
+- Processes queued jobs with deterministic mock results; elapsed time depends on the host and workload.
 
 ### Terminal 3: React + Vite Frontend
 ```powershell
-cd d:\DCU-Internship\castle-question-generation\frontend
-npm run dev
+npm --prefix frontend run dev
 ```
 - UI URL: `http://localhost:3000`
 - Proxies `/api/v1` requests to FastAPI on port 8000.
@@ -88,7 +85,7 @@ npm run dev
 
 Verify that all local storage directories, Python dependencies, and FFmpeg tools are healthy by running the Deployment Readiness Checker:
 ```powershell
-& 'C:\Users\TITO TOM\miniconda3\envs\yolo_seg_root\python.exe' -m castle_qa.deployment.readiness_check
+python -m castle_qa.deployment.readiness_check
 ```
 **Expected Output on Laptop**:
 ```
@@ -102,25 +99,24 @@ Exit Code: 0
 
 ### 5.1 Backend Pytest Suite
 ```powershell
-& 'C:\Users\TITO TOM\miniconda3\envs\yolo_seg_root\python.exe' -m pytest backend/tests -v
+python -m pytest backend/tests -v
 ```
-- Runs all 181 unit, integration, and verification tests.
+- Runs the backend unit, integration, and verification tests.
 - All tests execute with isolated temporary directories and mock inference engines.
 
 ### 5.2 Frontend Unit and Component Tests
 ```powershell
 npm --prefix frontend test
 ```
-- Runs 10 Node unit tests and 64 Vitest component tests (74 tests total).
-- Verifies local video isolation, object URL revocation, timeline rendering, and review actions.
+- Runs the Node and Vitest test suites.
+- Verifies local video isolation, object URL revocation, criteria handling, question editing, and timeline rendering.
 
 ### 5.3 Playwright Browser End-to-End Suite
 Ensure the Backend (port 8000), Mock Worker, and Frontend (port 3000) are running, then run:
 ```powershell
 npm --prefix frontend run test:e2e
 ```
-- Launches Microsoft Edge in headless mode.
-- Runs 15 comprehensive end-to-end user journeys (Tests A through L + Interval Preview & Mode C capture).
+- Runs the configured browser end-to-end scenarios.
 
 ### 5.4 Production Frontend Build
 ```powershell

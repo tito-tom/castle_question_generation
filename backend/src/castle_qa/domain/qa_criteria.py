@@ -1,15 +1,22 @@
-from dataclasses import dataclass, field
 import re
+from dataclasses import dataclass, field
 
 
-_QUESTION_STARTERS = {"who", "what", "when", "where", "why", "how"}
+_QUESTION_STARTERS = frozenset({"who", "what", "when", "where", "why", "how"})
 _QUESTION_START_PATTERNS = (
     re.compile(
-        r"\b(?:start|begin)\s+(?:(?:each|every|all)\s+)?(?:questions?\s+)?(?:with|using)\s+['\"`]*(who|what|when|where|why|how)\b",
+        (
+            r"\b(?:start|begin)\s+(?:(?:each|every|all)\s+)?"
+            r"(?:questions?\s+)?(?:with|using)\s+['\"`]*"
+            r"(who|what|when|where|why|how)\b"
+        ),
         re.IGNORECASE,
     ),
     re.compile(
-        r"\bquestions?\s+(?:should|must|need to)\s+start\s+with\s+['\"`]*(who|what|when|where|why|how)\b",
+        (
+            r"\bquestions?\s+(?:should|must|need to)\s+start\s+with\s+['\"`]*"
+            r"(who|what|when|where|why|how)\b"
+        ),
         re.IGNORECASE,
     ),
 )
@@ -24,6 +31,7 @@ def requested_question_starter(text: str) -> str | None:
             if starter in _QUESTION_STARTERS:
                 return starter
     return None
+
 
 @dataclass(frozen=True)
 class QACriteria:

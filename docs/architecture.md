@@ -2,7 +2,7 @@
 
 ## 1. System Overview
 
-CASTLE QA Studio is an annotation assistance platform designed to extract, inspect, and evaluate event timelines and question-answering pairs from long video recordings (such as the CASTLE dataset).
+CASTLE QA Studio understands a user-selected video interval and generates grounded question suggestions for use by annotators in other tools. The primary interface focuses on video understanding and question generation; retained QA, review, and export endpoints support existing data and integrations.
 
 ### Core Design Principles
 1. **Local-First Privacy**: Original recordings remain local. One continuous user-selected clip (up to 600 seconds and 1 GB) is uploaded to the backend server for analysis.
@@ -25,8 +25,7 @@ flowchart TD
         Player["HTML5 VideoPlayer (Interval Scrubber)"]
         ClipExt["Local Clip Extractor (Mode A/B/C)"]
         Timeline["Chronological Event Timeline"]
-        QAPanel["Grounded QA Panel"]
-        ReviewSpace["Whodunnit Review Workspace"]
+        QuestionWorkspace["Grounded Question Generation"]
     end
 
     subgraph FastAPI Backend
@@ -36,8 +35,7 @@ flowchart TD
         Tracker["StreamLeaseTracker (Cross-Process File Leases)"]
         SessSvc["TemporarySessionService (24h Inactivity Tracking)"]
         JobRepo["JobRepository (SQLite Queue)"]
-        QASvc["GroundedVideoQAService (Lexical Evidence Grounding)"]
-        ExportAdapter["WhodunnitExportAdapter (CSV / JSON)"]
+        LegacyAPI["Retained QA, review, and export routes"]
     end
 
     subgraph Worker Process
@@ -58,6 +56,9 @@ flowchart TD
     end
 
     %% Interactions
+    UI --> Player
+    UI --> Timeline
+    UI --> QuestionWorkspace
     Player --> ClipExt
     ClipExt -- "One clip upload (max 1GB)" --> SizeMW --> VidSvc
     VidSvc --> TempClips
@@ -65,8 +66,7 @@ flowchart TD
     Router --> Tracker --> Leases
     Router --> SessSvc
     Router --> JobRepo --> JobDB
-    Router --> QASvc
-    Router --> ExportAdapter
+    Router --> LegacyAPI
 
     WorkerRunner --> JobDB
     WorkerRunner --> EngineFactory
@@ -82,12 +82,12 @@ flowchart TD
 
 ### 3.1 React Frontend
 - **Framework**: React 18, TypeScript, Vite, Tailwind CSS.
-- **Local Video Management**: [useLocalVideo.ts](file:///d:/DCU-Internship/castle-question-generation/frontend/src/features/videos/useLocalVideo.ts) manages browser `File` references, creates isolated `blob:` Object URLs, and revokes unused URLs on replacement or teardown to prevent memory leaks.
+- **Local Video Management**: [useLocalVideo.ts](../frontend/src/features/videos/useLocalVideo.ts) manages browser `File` references, creates isolated `blob:` Object URLs, and revokes unused URLs on replacement or teardown to prevent memory leaks.
 - **Local Extraction Modal**:
   - **Mode A (Native FFmpeg Command)**: Generates verified `-ss <start> -i <file> -to <end> -c copy` commands (without forced overwrite `-y`) for fast local terminal execution.
   - **Mode B (Short Clip Import)**: Allows dragging and dropping the locally extracted clip file into the workspace.
   - **Mode C (Experimental Browser Capture)**: Uses `HTMLVideoElement.captureStream()` and `MediaRecorder` directly in the browser to extract short WebM/MP4 clips without external utilities.
-- **Timeline & Seeking**: Clicking an event or QA evidence badge immediately seeks the `VideoPlayer` to that exact second, highlighting the supporting timestamp interval.
+- **Results Workspace**: The primary UI has separate Video Understanding and Generate Questions tabs. Clicking an event seeks the player to its evidence interval.
 
 ### 3.2 FastAPI Backend
 - **Framework**: FastAPI `>=0.115`, Starlette, Pydantic V2.
@@ -100,14 +100,19 @@ flowchart TD
 - **Atomic State Transitions**: Transitions (`queued` -> `running` -> `completed` / `failed`) use single atomic UPDATE statements with unique claim tokens.
 - **Worker Crash Recovery**: Background heartbeat threads update `last_heartbeat_at` every 2 seconds. If a worker process crashes, orphan jobs are safely marked `failed` or re-queued after the heartbeat expiration threshold.
 
-### 3.4 Grounded Video Question Answering
-- **Current Baseline**: [GroundedVideoQAService](file:///d:/DCU-Internship/castle-question-generation/backend/src/castle_qa/services/video_qa_service.py) performs lexical and semantic token matching across the extracted event timeline.
+### 3.4 Question Generation
+- **Evidence Source**: Questions are generated from retained video-understanding events; criteria guide question style and event selection without supplying new video facts.
+- **Real Mode**: The Qwen question generator reuses the local model already loaded by the video-understanding service, avoiding a second 7B model copy in GPU memory.
+- **Mock Mode**: The template generator produces deterministic suggestions and reports its generation mode separately from Qwen.
+
+### 3.5 Retained Grounded QA API
+- **Compatibility Service**: [GroundedVideoQAService](../backend/src/castle_qa/services/video_qa_service.py) performs lexical and semantic token matching across the extracted event timeline. This capability remains available through the API; it is not a chat workspace in the primary UI.
 - **Evidence Intervals**: Returns start/end timestamps of the events containing the highest evidence match score.
 - **Observability Determination**: Distinguishes directly observed actions (e.g., "Person1 opens microwave") from unobservable actions ("Person1 likes coffee").
-- **Confidence Badge**: Displays an amber heuristic match score. It is clearly labeled as an evidence-matching score, not a calibrated neural probability.
+- **Confidence Values**: API confidence values are heuristic evidence-matching scores, not calibrated neural probabilities.
 
-### 3.5 Whodunnit Annotation Review and Export
-- **Review Workspace**: Annotators review each candidate event and question, toggle acceptance status (`accepted`, `rejected`, `edited`), and adjust descriptions.
+### 3.6 Retained Review and Export APIs
+- **Review Routes**: Existing API routes retain review-session and status operations for compatibility. Annotation review is not part of the primary UI workflow.
 - **Distractor Generation**: For multi-choice questions, distractors are generated using other actor names and plausible actions extracted from the video context.
 - **Export Formats**:
   - **JSON**: Hierarchical annotation package with video metadata, event intervals, question-answer pairs, and review provenance.

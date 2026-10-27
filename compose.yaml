@@ -17,6 +17,8 @@ services:
     ports:
       - "8000:8000"
     environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      CASTLE_INTERNAL_CLEANUP_TOKEN: ${CASTLE_INTERNAL_CLEANUP_TOKEN:-}
       CASTLE_ANALYSIS_DIR: /app/data/analysis
       CASTLE_QUESTION_DIR: /app/data/questions/api_template
       CASTLE_JOB_DB_PATH: /app/data/jobs/jobs.sqlite3
