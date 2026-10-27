@@ -1,6 +1,7 @@
 # Python
 __pycache__/
 *.py[cod]
+*.egg-info/
 
 # Virtual environments
 .venv/
@@ -21,12 +22,19 @@ venv/
 .cache/
 huggingface/*
 
-# Generated data
+# Generated data & databases
 data/videos/*
 data/clips/*
 data/metadata/*
 data/analysis/*
 data/questions/*
+data/jobs/*
+data/reviews/*
+backend/src/data/
+backend/data/
+*.sqlite3
+*.sqlite
+*.db
 
 # Keep folders in git
 !data/videos/.gitkeep
@@ -34,3 +42,30 @@ data/questions/*
 !data/metadata/.gitkeep
 !data/analysis/.gitkeep
 !data/questions/.gitkeep
+!data/jobs/.gitkeep
+!data/reviews/.gitkeep
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Video binaries
+*.mp4
+*.avi
+*.mov
+*.mkv
+!data/videos/.gitkeep
+!frontend/e2e/fixtures/*.mp4
+
+# Playwright
+test-results/
+playwright-report/
+frontend/test-results/
+frontend/playwright-report/
+frontend/.playwright/
+frontend/.playwright-e2e-*/
+frontend/.playwright-e2e-state.json
+
+# Scratch and temporary scripts
+scratch/

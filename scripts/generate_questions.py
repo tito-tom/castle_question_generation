@@ -3,22 +3,22 @@ import json
 
 from pathlib import Path
 
-from src.models.qa_criteria import QACriteria
-from src.models.video_analysis import VideoAnalysis
+from castle_qa.domain.qa_criteria import QACriteria
+from castle_qa.domain.video_analysis import VideoAnalysis
 
-from src.repositories.question_repository import (
+from castle_qa.infrastructure.repositories.question_repository import (
     QuestionRepository
 )
 
-from src.services.question_generation.question_validator import (
+from castle_qa.services.question_generation.question_validator import (
     QuestionValidator
 )
 
-from src.services.question_generation.template_question_generator import (
+from castle_qa.services.question_generation.template_question_generator import (
     TemplateQuestionGenerator
 )
 
-from src.services.question_generation.qwen_local_question_generator import (
+from castle_qa.services.question_generation.qwen_local_question_generator import (
     QwenLocalQuestionGenerator
 )
 

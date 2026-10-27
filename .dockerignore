@@ -1,0 +1,55 @@
+
+# ========================================
+# CASTLE QA Studio - Docker Build Exclusions
+# ========================================
+
+# Git and development tools
+.git/
+.github/
+.vscode/
+.idea/
+
+# Python cache and test artifacts
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Python virtual environments
+.venv/
+venv/
+env/
+conda-env/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# CASTLE dataset and generated results
+data/
+
+# Video files outside the data directory
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# Frontend dependencies and build output
+frontend/node_modules/
+frontend/dist/
+
+# Logs and temporary files
+*.log
+logs/
+tmp/
+temp/
+
+# Operating system files
+.DS_Store
+Thumbs.db

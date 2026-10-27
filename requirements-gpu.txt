@@ -1,8 +1,6 @@
 
-# ============================================
-# CASTLE Question Generation
-# Python 3.11 | Windows | NVIDIA RTX 5090
-# ============================================
+# GPU worker dependencies for Docker and Linux NVIDIA hosts.
+# The worker image selects the CUDA-enabled PyTorch build.
 
 # PyTorch CUDA 13.0 package source
 --extra-index-url https://download.pytorch.org/whl/cu130
