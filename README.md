@@ -25,6 +25,8 @@ flowchart LR
 
 The frontend is organized by user-facing feature. The backend follows a layered structure: API routes and schemas, application workflows, domain models, services, repositories, and a separate inference worker.
 
+New to this stack? Start with [Learn the codebase from Python and OOP](docs/learning/README.md), covering technologies, architecture, storage, route contracts, workers, Qwen, testing, and a walkthrough of the frontend entry files.
+
 ## Run with Docker
 
 ### CPU development with mock inference
