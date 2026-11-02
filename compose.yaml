@@ -1,6 +1,7 @@
 # ============================================================
 # CASTLE QA Studio - Complete Multi-Service Orchestration
 # Services:
+#   migrate: Apply database migrations before backend startup
 #   1. api: FastAPI Backend (CPU/GPU-agnostic)
 #   2. worker: Qwen2.5-VL Inference Worker (NVIDIA GPU Target)
 #   3. frontend: ReactJS + Vite + Nginx UI
@@ -8,12 +9,30 @@
 
 services:
 
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    image: castle-qa-api:latest
+    command: ["python", "-m", "alembic", "-c", "/app/alembic.ini", "upgrade", "head"]
+    environment:
+      CASTLE_JOB_DB_PATH: /app/data/jobs/jobs.sqlite3
+    volumes:
+      - ./data/jobs:/app/data/jobs
+    healthcheck:
+      disable: true
+    restart: "no"
+    init: true
+
   api:
     build:
       context: .
       dockerfile: docker/api.Dockerfile
     image: castle-qa-api:latest
     container_name: castle-qa-api
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "8000:8000"
     environment:
@@ -68,7 +87,10 @@ services:
       - ./data/clips:/app/data/clips
       - ./data/reviews:/app/data/reviews
     depends_on:
-      - api
+      migrate:
+        condition: service_completed_successfully
+      api:
+        condition: service_started
     restart: unless-stopped
     init: true
 

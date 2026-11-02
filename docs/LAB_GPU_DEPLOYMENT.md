@@ -146,8 +146,8 @@ docker compose -f compose.yaml -f compose.gpu.yaml config
 # Launch all services in background
 docker compose -f compose.yaml -f compose.gpu.yaml up -d --build
 
-# Apply the job-queue schema before submitting jobs
-docker compose -f compose.yaml -f compose.gpu.yaml exec api python -m alembic -c /app/alembic.ini upgrade head
+# Inspect the migration service (exits with code 0 before API/worker startup)
+docker compose -f compose.yaml -f compose.gpu.yaml logs migrate
 ```
 
 ### Checking Services
@@ -255,7 +255,7 @@ Then on the Lab PC:
 ```bash
 git pull origin feature/fastapi-backend
 docker compose -f compose.yaml -f compose.gpu.yaml up -d --build
-docker compose -f compose.yaml -f compose.gpu.yaml exec api python -m alembic -c /app/alembic.ini upgrade head
+docker compose -f compose.yaml -f compose.gpu.yaml logs migrate
 ```
 
 #### Option B: Offline Git Bundle Transfer (Air-Gapped or Pre-Commit Verification)

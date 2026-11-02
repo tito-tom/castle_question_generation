@@ -33,10 +33,11 @@ New to this stack? Start with [Learn the codebase from Python and OOP](docs/lear
 
 ~~~bash
 docker compose up -d --build
-docker compose exec api python -m alembic -c /app/alembic.ini upgrade head
 ~~~
 
 Open [http://localhost:3000](http://localhost:3000). The API health endpoint is [http://localhost:8000/api/v1/health](http://localhost:8000/api/v1/health).
+
+Compose runs the `migrate` service against the shared jobs database before starting the API and worker. It exits with code 0 on success; if migration fails, backend startup is blocked. Inspect failures with `docker compose logs migrate`. This also applies when using the GPU override.
 
 ### NVIDIA GPU worker
 
@@ -44,7 +45,6 @@ On a host with Docker's NVIDIA Container Toolkit configured:
 
 ~~~bash
 docker compose -f compose.yaml -f compose.gpu.yaml up -d --build
-docker compose -f compose.yaml -f compose.gpu.yaml exec api python -m alembic -c /app/alembic.ini upgrade head
 ~~~
 
 The GPU override selects real inference and keeps the Hugging Face model cache in a named Docker volume. The first worker start downloads model files; later starts reuse that cache. See [docs/LAB_GPU_DEPLOYMENT.md](docs/LAB_GPU_DEPLOYMENT.md) for setup and troubleshooting.
