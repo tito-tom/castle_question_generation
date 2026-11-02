@@ -29,11 +29,13 @@ api = [
     "python-multipart>=0.0.9",
 ]
 gpu = [
-    "torch>=2.4.0",
-    "torchvision",
-    "transformers>=4.49.0",
-    "accelerate>=1.0",
-    "safetensors>=0.5",
+    # CUDA 13.0 builds; install with the PyTorch cu130 extra index.
+    "torch==2.13.0+cu130",
+    "torchvision==0.28.0+cu130",
+    "torchcodec==0.13.0+cu130",
+    "transformers>=5.0,<6",
+    "accelerate>=1.0,<2",
+    "safetensors>=0.5,<1",
     "av>=14",
     "qwen-vl-utils",
 ]

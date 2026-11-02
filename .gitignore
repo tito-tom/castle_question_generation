@@ -69,3 +69,5 @@ frontend/.playwright-e2e-state.json
 
 # Scratch and temporary scripts
 scratch/
+
+diagram/

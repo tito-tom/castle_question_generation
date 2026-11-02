@@ -16,15 +16,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Install the API and GPU dependency sets. requirements-gpu.txt pins the
-# CUDA-enabled PyTorch/Torchvision pair and compatible Transformers versions.
-COPY requirements-api.txt .
-COPY requirements-gpu.txt .
-
-RUN python -m pip install --break-system-packages --no-cache-dir \
-    -r requirements-api.txt \
-    -r requirements-gpu.txt
-
 # Create directory structure
 RUN mkdir -p /app/data/analysis \
              /app/data/questions/api_template \
@@ -40,7 +31,10 @@ COPY backend/alembic.ini ./alembic.ini
 COPY backend/alembic/ ./alembic/
 COPY backend/pyproject.toml ./pyproject.toml
 
-# Install package in container
-RUN python -m pip install --break-system-packages --no-cache-dir -e .
+# Install the backend and pinned CUDA stack from pyproject.toml.
+# Include development tools to retain the worker's existing pytest installation.
+RUN python -m pip install --break-system-packages --no-cache-dir \
+    --extra-index-url https://download.pytorch.org/whl/cu130 \
+    -e ".[gpu,dev]"
 
 CMD ["python", "-m", "castle_qa.workers.entrypoint", "--poll-interval", "2.0"]

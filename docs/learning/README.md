@@ -130,7 +130,7 @@ Official starting points: [React Quick Start](https://react.dev/learn), [TypeScr
 
 ### Python API and storage
 
-Install using the editable backend command above. `backend/pyproject.toml` defines the package and optional groups; `requirements-api.txt` is also used during container builds.
+Install using the editable backend command above. `backend/pyproject.toml` defines the package, shared dependencies, and optional groups, and is used by both backend container builds. The GPU worker installs the `gpu` and `dev` extras using the PyTorch CUDA 13.0 package index.
 
 | Technology | Why it is here | Where used | How you use it |
 | --- | --- | --- | --- |
@@ -164,7 +164,7 @@ Read [FastAPI tutorial](https://fastapi.tiangolo.com/tutorial/), [SQLAlchemy 2.0
 | qwen-vl-utils | Declared in optional/dev GPU sets | The current local service uses processor chat templates directly; do not assume every declared package has a direct import |
 | Hugging Face cache | Reuses downloaded model files | `compose.gpu.yaml`: named `model_cache` volume |
 
-There are multiple GPU dependency declarations: optional `[gpu]`, `requirements-dev.txt`, and the container's `requirements-gpu.txt`. They differ, notably in Transformers constraints. Read the deployment-specific files together; installing everything from every file is not a coherent environment strategy. The container path pins a CUDA/PyTorch stack; the ordinary local mock path avoids loading it.
+GPU dependencies are declared in the `gpu` extra in `backend/pyproject.toml`, including pinned CUDA/PyTorch versions. On a compatible Linux NVIDIA host, install with `python -m pip install -e "./backend[gpu,dev]" --extra-index-url https://download.pytorch.org/whl/cu130` from the repository root. The ordinary local mock path uses the `dev` extra without GPU dependencies.
 
 For learning the exact model APIs, read the official [Qwen2.5-VL Transformers documentation](https://huggingface.co/docs/transformers/model_doc/qwen2_5_vl). The project's adapter code is the source of truth for its chosen invocation and version assumptions.
 

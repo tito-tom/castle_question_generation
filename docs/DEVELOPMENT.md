@@ -41,6 +41,14 @@ python -m alembic -c backend/alembic.ini upgrade head
 > [!NOTE]
 > **Repository Package Layout**: The package definition file `pyproject.toml` resides inside `backend/` and targets `where = ["src"]`. Running `pip install -e .` directly from the repository root without `./backend` will fail because `pyproject.toml` is not located in the repository root.
 
+For GPU development on a compatible Linux NVIDIA host, run this from the repository root:
+
+```bash
+python -m pip install -e "./backend[gpu,dev]" --extra-index-url https://download.pytorch.org/whl/cu130
+```
+
+The `gpu` extra pins the CUDA 13.0 stack in `backend/pyproject.toml`. CPU-only mock development uses the setup above without the `gpu` extra.
+
 ### 2.2 Frontend Setup
 In a separate terminal or the same terminal:
 ```powershell

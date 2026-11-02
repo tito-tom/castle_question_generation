@@ -14,10 +14,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Install CPU-only API dependencies
-COPY requirements-api.txt .
-RUN python -m pip install --no-cache-dir -r requirements-api.txt
-
 # Create application user and writable data directories
 RUN useradd --create-home --uid 10001 appuser \
     && mkdir -p /app/data/analysis \
@@ -35,7 +31,7 @@ COPY --chown=appuser:appuser backend/alembic.ini ./alembic.ini
 COPY --chown=appuser:appuser backend/alembic/ ./alembic/
 COPY --chown=appuser:appuser backend/pyproject.toml ./pyproject.toml
 
-# Install package in container
+# Install the backend package and CPU-only dependencies from pyproject.toml
 RUN python -m pip install --no-cache-dir -e .
 
 USER appuser
